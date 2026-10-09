@@ -1,0 +1,14 @@
+-- ============================================================
+-- Banco do API Gateway
+-- ============================================================
+-- Tabelas deste banco, segundo a RFC:
+--   session
+--
+-- Combinado do time sobre chaves:
+--   - `id` interno para PK DENTRO deste banco; ele nunca sai na
+--     resposta (R5);
+--   - user_id chega da API de Usuários: é UUID, sem FK.
+--   - a sessão guarda o HASH do token, nunca o token.
+--
+-- Este arquivo roda UMA vez, quando o volume do banco nasce. Mudou o
+-- arquivo? `docker compose down -v` e suba de novo.

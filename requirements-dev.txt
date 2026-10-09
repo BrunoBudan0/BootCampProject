@@ -1,0 +1,12 @@
+# O que a SUA máquina precisa para rodar os testes. Nada daqui vai para
+# dentro das imagens: as APIs têm cada uma o próprio requirements.txt.
+#
+# Os testes são black-box (R1): falam com as APIs só por HTTP. Por isso
+# esta lista não tem FastAPI nem SQLAlchemy — o teste não sabe com que
+# as APIs foram escritas.
+
+pytest==7.4.4
+requests==2.32.3
+# Lê o .env da raiz (se existir), para os testes usarem as mesmas
+# portas e tokens que o docker compose.
+python-dotenv==1.0.1

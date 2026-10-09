@@ -1,0 +1,74 @@
+import os
+
+
+SERVICE_ROOT = os.path.abspath(os.path.dirname(__file__))
+
+# Onde moram os arquivos de schema — os .json que descrevem o formato
+# que cada requisicao precisa ter. Quem le essa pasta e o
+# src/utils/schema_handler.py.
+SCHEMA_PATH = os.path.join(SERVICE_ROOT, "schemas")
+
+APP_ENV = os.environ.get("APP_ENV", "local")
+SERVICE_NAME = os.environ.get("SERVICE_NAME", "gateway")
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# No Gateway, o INTERNAL_TOKEN e o token do SISTEMA CLIENTE (o app do
+# publico e o painel): e o que eles mandam no header INTERNAL-TOKEN. Ele
+# para aqui e nunca entra na rede interna.
+INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
+
+# As tres APIs da rede interna. Cada uma tem o PROPRIO token, e o Gateway
+# e o unico servico que conhece os tres: e ele quem repassa as
+# requisicoes de fora. O endereco e o nome do servico no
+# docker-compose.yml (http://users-api:3000), nunca localhost.
+#
+# O timeout do Gateway e o MAIOR da cadeia: quem esta no meio (Eventos
+# chamando Pagamentos, Pagamentos chamando o provedor) precisa desistir
+# antes, para devolver um erro com nome em vez de deixar o Gateway
+# esperando sozinho.
+USERS_API_URL = os.environ.get("USERS_API_URL")
+USERS_API_TOKEN = os.environ.get("USERS_API_TOKEN")
+USERS_API_TIMEOUT = int(os.environ.get("USERS_API_TIMEOUT", "10"))
+
+EVENTS_API_URL = os.environ.get("EVENTS_API_URL")
+EVENTS_API_TOKEN = os.environ.get("EVENTS_API_TOKEN")
+EVENTS_API_TIMEOUT = int(os.environ.get("EVENTS_API_TIMEOUT", "10"))
+
+PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL")
+PAYMENTS_API_TOKEN = os.environ.get("PAYMENTS_API_TOKEN")
+PAYMENTS_API_TIMEOUT = int(os.environ.get("PAYMENTS_API_TIMEOUT", "10"))
+
+# Rotas públicas: não exigem o header INTERNAL-TOKEN. São as duas que
+# precisam responder pra quem ainda não tem token nenhum: a raiz, que
+# diz quem é este serviço, e o health check, que o Docker consulta pra
+# saber se a API já está de pé.
+BYPASS_ENDPOINTS = [
+    "/",
+    "/health_check",
+]
+
+REQUIRED_VARIABLES = [
+    "DATABASE_URL",
+    "INTERNAL_TOKEN",
+    "USERS_API_URL",
+    "USERS_API_TOKEN",
+    "EVENTS_API_URL",
+    "EVENTS_API_TOKEN",
+    "PAYMENTS_API_URL",
+    "PAYMENTS_API_TOKEN",
+]
+
+
+def check_variables():
+    missing = []
+    for name in REQUIRED_VARIABLES:
+        if not globals().get(name):
+            missing.append(name)
+
+    if missing:
+        raise EnvironmentError(
+            f"Faltam variáveis de ambiente: {', '.join(missing)}. "
+            "Rodando com 'docker compose up' elas já vêm preenchidas. "
+            "Fora do Docker, copie o .env.example para .env."
+        )

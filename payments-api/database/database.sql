@@ -1,0 +1,14 @@
+-- ============================================================
+-- Banco da API de Pagamentos
+-- ============================================================
+-- Tabelas deste banco, segundo a RFC:
+--   account, transaction, critical_log_payment
+--
+-- Combinado do time sobre chaves:
+--   - `id` interno para PK e FK DENTRO deste banco; ele nunca sai na
+--     resposta (R5);
+--   - uma coluna UUID para tudo o que sai da API ou que outro serviço
+--     guarda (event_id e holder_id chegam de fora: são UUID, sem FK).
+--
+-- Este arquivo roda UMA vez, quando o volume do banco nasce. Mudou o
+-- arquivo? `docker compose down -v` e suba de novo.

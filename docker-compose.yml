@@ -1,0 +1,295 @@
+# ─────────────────────────────────────────────────────────────────────
+# Banco de Eventos — o sistema inteiro em um arquivo
+#
+#     docker compose up -d --build --wait
+#
+# sobe os 9 containers e só devolve o terminal quando todos estão de pé.
+# Depois disso, `pytest` na raiz do repositório.
+#
+# Ninguém precisa criar arquivo nenhum antes (R2): cada configuração tem
+# um valor padrão escrito no próprio ${VARIAVEL:-padrao}. Se existir um
+# .env na raiz (copiado do .env.example), o que estiver nele ganha.
+# ─────────────────────────────────────────────────────────────────────
+#
+# AS REDES — quem enxerga quem
+#
+#   services        as 4 APIs e o Mockserver. É por ela que uma API chama
+#                   a outra, pelo NOME do serviço (http://payments-api:3000),
+#                   nunca por localhost: dentro de um container, localhost
+#                   é o próprio container.
+#   <api>-db-net    uma por banco, com só duas pontas: o banco e a API
+#                   dona dele. A API de Eventos não tem caminho nenhum até
+#                   o payments-db — "nenhuma API lê o banco da outra" deixa
+#                   de ser promessa e vira impossibilidade.
+#
+# AS PORTAS — o que a sua máquina enxerga
+#
+#   gateway         3000, aberta: é a única porta do sistema.
+#   as 3 APIs       presas a 127.0.0.1: só a própria máquina alcança. É por
+#                   elas que os testes de cada API chegam direto, sem passar
+#                   pelo Gateway. Em produção, nenhuma delas publicaria porta.
+#   mockserver      127.0.0.1:1080: é por aqui que os testes programam o ator.
+#   os 4 bancos     nenhuma. Os testes são black-box (R1) e não leem banco.
+#
+# OS TOKENS — cada API tem o seu
+#
+#   Toda API confere o PRÓPRIO token (a variável INTERNAL_TOKEN dela) no
+#   header INTERNAL-TOKEN de toda rota, menos / e /health_check. Quem
+#   precisa chamá-la recebe o valor dela; quem não precisa, não recebe:
+#
+#     Gateway       conhece os tokens das 3 APIs
+#     Eventos       conhece os de Usuários e Pagamentos
+#     Pagamentos    não conhece nenhum (só chama os provedores)
+#     Usuários      não conhece nenhum (não chama ninguém)
+#
+#   O token do sistema cliente (app e painel) é o INTERNAL_TOKEN do
+#   Gateway, e para ali: nunca entra na rede interna.
+#
+# OS TIMEOUTS — cada elo desiste antes de quem espera por ele
+#
+#   Gateway → APIs 10 s  >  Eventos → APIs 5 s  >  Pagamentos → provedor 3 s
+# ─────────────────────────────────────────────────────────────────────
+
+# O nome do projeto: os containers saem como banco-evento-<serviço>-1,
+# seja qual for o nome da pasta onde o repositório foi clonado.
+name: banco-evento
+
+# Blocos reaproveitados (os "x-" são ignorados pelo compose; o & dá nome
+# ao bloco e o * o reaproveita lá embaixo).
+x-api-healthcheck: &api-healthcheck
+  # "Subiu" não é o mesmo que "já responde". É esta checagem que diz
+  # quando a API passa a atender de verdade — e é ela que o --wait e os
+  # depends_on esperam.
+  test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:3000/health_check\")'"]
+  interval: 3s
+  timeout: 5s
+  retries: 20
+  start_period: 5s
+
+x-db-healthcheck: &db-healthcheck
+  # O $$ chega ao container como $: quem lê POSTGRES_USER é o shell lá
+  # dentro, e por isso a mesma checagem serve para os 4 bancos.
+  test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+  interval: 3s
+  timeout: 3s
+  retries: 20
+
+services:
+
+  # ═══ A porta da rua ════════════════════════════════════════════════
+  gateway:
+    build:
+      context: ./gateway
+      target: api
+    ports:
+      - "${GATEWAY_PORT:-3000}:3000"
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      SERVICE_NAME: gateway
+      DATABASE_URL: postgresql+psycopg2://gateway:gateway@gateway-db:5432/gateway
+      # O token do app e do painel.
+      INTERNAL_TOKEN: ${CLIENT_INTERNAL_TOKEN:-client_default_token}
+      USERS_API_URL: http://users-api:3000
+      USERS_API_TOKEN: ${USERS_API_TOKEN:-users_default_token}
+      USERS_API_TIMEOUT: "10"
+      EVENTS_API_URL: http://events-api:3000
+      EVENTS_API_TOKEN: ${EVENTS_API_TOKEN:-events_default_token}
+      EVENTS_API_TIMEOUT: "10"
+      PAYMENTS_API_URL: http://payments-api:3000
+      PAYMENTS_API_TOKEN: ${PAYMENTS_API_TOKEN:-payments_default_token}
+      PAYMENTS_API_TIMEOUT: "10"
+      # O --reload percebe arquivo salvo olhando o disco de tempos em
+      # tempos. Sem isto, no Windows a mudança feita fora do container
+      # não chega a ser notada lá dentro.
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      # Monta o código dentro do container: salvou o arquivo, a API
+      # recarrega sozinha (o --reload do command).
+      - ./gateway/src:/app
+    command: uvicorn app:app --host 0.0.0.0 --port 3000 --no-server-header --reload
+    healthcheck: *api-healthcheck
+    depends_on:
+      gateway-db:
+        condition: service_healthy
+      users-api:
+        condition: service_healthy
+      events-api:
+        condition: service_healthy
+      payments-api:
+        condition: service_healthy
+    networks:
+      - services
+      - gateway-db-net
+
+  # ═══ As três APIs da rede interna ═════════════════════════════════
+  users-api:
+    build:
+      context: ./users-api
+      target: api
+    ports:
+      - "127.0.0.1:${USERS_API_PORT:-3001}:3000"
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      SERVICE_NAME: users-api
+      DATABASE_URL: postgresql+psycopg2://users:users@users-db:5432/users
+      INTERNAL_TOKEN: ${USERS_API_TOKEN:-users_default_token}
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./users-api/src:/app
+    command: uvicorn app:app --host 0.0.0.0 --port 3000 --no-server-header --reload
+    healthcheck: *api-healthcheck
+    depends_on:
+      users-db:
+        condition: service_healthy
+    networks:
+      - services
+      - users-db-net
+
+  events-api:
+    build:
+      context: ./events-api
+      target: api
+    ports:
+      - "127.0.0.1:${EVENTS_API_PORT:-3002}:3000"
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      SERVICE_NAME: events-api
+      DATABASE_URL: postgresql+psycopg2://events:events@events-db:5432/events
+      INTERNAL_TOKEN: ${EVENTS_API_TOKEN:-events_default_token}
+      USERS_API_URL: http://users-api:3000
+      USERS_API_TOKEN: ${USERS_API_TOKEN:-users_default_token}
+      USERS_API_TIMEOUT: "5"
+      PAYMENTS_API_URL: http://payments-api:3000
+      PAYMENTS_API_TOKEN: ${PAYMENTS_API_TOKEN:-payments_default_token}
+      PAYMENTS_API_TIMEOUT: "5"
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./events-api/src:/app
+    command: uvicorn app:app --host 0.0.0.0 --port 3000 --no-server-header --reload
+    healthcheck: *api-healthcheck
+    depends_on:
+      events-db:
+        condition: service_healthy
+      users-api:
+        condition: service_healthy
+      payments-api:
+        condition: service_healthy
+    networks:
+      - services
+      - events-db-net
+
+  payments-api:
+    build:
+      context: ./payments-api
+      target: api
+    ports:
+      - "127.0.0.1:${PAYMENTS_API_PORT:-3003}:3000"
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      SERVICE_NAME: payments-api
+      DATABASE_URL: postgresql+psycopg2://payments:payments@payments-db:5432/payments
+      INTERNAL_TOKEN: ${PAYMENTS_API_TOKEN:-payments_default_token}
+      # Cartão e Pix são o mesmo Mockserver, separados pelo começo do
+      # caminho: os testes programam cada "provedor" pelo prefixo.
+      CARD_PROVIDER_URL: http://mockserver:1080/card-provider
+      PIX_PROVIDER_URL: http://mockserver:1080/pix-provider
+      PROVIDERS_TIMEOUT: "3"
+      PIX_WEBHOOK_SECRET: ${PIX_WEBHOOK_SECRET:-pix_default_secret}
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./payments-api/src:/app
+    command: uvicorn app:app --host 0.0.0.0 --port 3000 --no-server-header --reload
+    healthcheck: *api-healthcheck
+    depends_on:
+      payments-db:
+        condition: service_healthy
+      # A imagem do Mockserver é mínima e não roda um healthcheck simples:
+      # aqui basta ele ter iniciado.
+      mockserver:
+        condition: service_started
+    networks:
+      - services
+      - payments-db-net
+
+  # ═══ O ator no lugar dos provedores de cartão e Pix ═══════════════
+  mockserver:
+    image: mockserver/mockserver:5.15.0
+    ports:
+      - "127.0.0.1:${MOCKSERVER_PORT:-1080}:1080"
+    environment:
+      MOCKSERVER_LOG_LEVEL: WARN
+    networks:
+      - services
+
+  # ═══ Um banco por API ═════════════════════════════════════════════
+  # Usuário e senha fixos de propósito: o banco só é alcançável pela rede
+  # dele, que só a API dona enxerga. Cada banco nasce do database.sql da
+  # pasta da API — e só na PRIMEIRA vez que o volume é criado.
+  gateway-db:
+    build: ./gateway/database
+    environment:
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway
+      POSTGRES_DB: gateway
+    volumes:
+      - gateway-db-data:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    networks:
+      - gateway-db-net
+
+  users-db:
+    build: ./users-api/database
+    environment:
+      POSTGRES_USER: users
+      POSTGRES_PASSWORD: users
+      POSTGRES_DB: users
+    volumes:
+      - users-db-data:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    networks:
+      - users-db-net
+
+  events-db:
+    build: ./events-api/database
+    environment:
+      POSTGRES_USER: events
+      POSTGRES_PASSWORD: events
+      POSTGRES_DB: events
+    volumes:
+      - events-db-data:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    networks:
+      - events-db-net
+
+  payments-db:
+    build: ./payments-api/database
+    environment:
+      POSTGRES_USER: payments
+      POSTGRES_PASSWORD: payments
+      POSTGRES_DB: payments
+    volumes:
+      - payments-db-data:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    networks:
+      - payments-db-net
+
+networks:
+  services: {}
+  # internal: true = rede sem saída para a internet. Banco não precisa
+  # falar com ninguém além da API dona dele.
+  gateway-db-net:
+    internal: true
+  users-db-net:
+    internal: true
+  events-db-net:
+    internal: true
+  payments-db-net:
+    internal: true
+
+# Os dados de cada banco moram num volume com nome: sobrevivem a um
+# `docker compose down` e só somem com `docker compose down -v`.
+volumes:
+  gateway-db-data: {}
+  users-db-data: {}
+  events-db-data: {}
+  payments-db-data: {}

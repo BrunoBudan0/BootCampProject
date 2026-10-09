@@ -1,0 +1,16 @@
+-- ============================================================
+-- Banco da API de Eventos
+-- ============================================================
+-- Tabelas deste banco, segundo a RFC:
+--   event, fee_rate, cashback_rate, event_company, event_attendee,
+--   product, purchase, purchase_product, fee_charge, critical_log_event
+--
+-- Combinado do time sobre chaves:
+--   - `id` interno para PK e FK DENTRO deste banco; ele nunca sai na
+--     resposta (R5);
+--   - uma coluna UUID para tudo o que sai da API ou que outro serviço
+--     guarda (organizer_id, company_id, attendee_id e account_id chegam
+--     de fora: são UUID, sem FK).
+--
+-- Este arquivo roda UMA vez, quando o volume do banco nasce. Mudou o
+-- arquivo? `docker compose down -v` e suba de novo.

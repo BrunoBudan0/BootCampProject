@@ -1,0 +1,14 @@
+-- ============================================================
+-- Banco da API de Usuários
+-- ============================================================
+-- Tabelas deste banco, segundo a RFC:
+--   attendee, organizer, company
+--
+-- Combinado do time sobre chaves:
+--   - `id` interno para PK e FK DENTRO deste banco; ele nunca sai na
+--     resposta (R5);
+--   - uma coluna UUID para tudo o que sai da API ou que outro serviço
+--     guarda (o X-User-Id que o Gateway repassa é este UUID).
+--
+-- Este arquivo roda UMA vez, quando o volume do banco nasce. Mudou o
+-- arquivo? `docker compose down -v` e suba de novo.
