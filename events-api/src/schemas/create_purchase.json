@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_attendee_id", "event_company_id", "items", "idempotency_key"],
+  "properties": {
+    "event_attendee_id": {"type": "string", "pattern": "^[0-9a-fA-F-]{36}$"},
+    "event_company_id": {"type": "string", "pattern": "^[0-9a-fA-F-]{36}$"},
+    "idempotency_key": {"type": "string", "minLength": 8, "maxLength": 80, "pattern": "^[A-Za-z0-9:_-]+$"},
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["product_id", "quantity"],
+        "properties": {
+          "product_id": {"type": "string", "pattern": "^[0-9a-fA-F-]{36}$"},
+          "quantity": {"type": "integer", "minimum": 1, "maximum": 999}
+        }
+      }
+    }
+  }
+}
