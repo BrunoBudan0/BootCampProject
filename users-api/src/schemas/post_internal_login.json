@@ -1,0 +1,11 @@
+{
+  "title": "PostInternalLogin",
+  "type": "object",
+  "properties": {
+    "email": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "password": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "user_type": { "enum": ["attendee", "organizer", "company"] }
+  },
+  "required": ["email", "password", "user_type"],
+  "additionalProperties": false
+}

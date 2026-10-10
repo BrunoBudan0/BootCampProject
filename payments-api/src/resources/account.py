@@ -24,3 +24,22 @@ class AccountResource:
         account_dto = controller.get_account_for_caller(account_id)
 
         return JSONResponse(content=jsonable_encoder(account_dto), status_code=http_status.HTTP_200_OK)
+
+    def on_get_list(self) -> JSONResponse:
+        controller = AccountController()
+        accounts_page = controller.list_accounts_for_caller()
+
+        return JSONResponse(content=jsonable_encoder(accounts_page), status_code=http_status.HTTP_200_OK)
+
+    @SchemaHandler.validate("put_internal_account_block.json")
+    def on_put_internal_block(self, account_id: str, payload: dict) -> JSONResponse:
+        controller = AccountController()
+        account_dto = controller.set_account_blocked(account_id, payload["blocked"])
+
+        return JSONResponse(content=jsonable_encoder(account_dto), status_code=http_status.HTTP_200_OK)
+
+    def on_get_internal_event_reconciliation(self, event_id: str) -> JSONResponse:
+        controller = AccountController()
+        reconciliation = controller.reconcile_event(event_id)
+
+        return JSONResponse(content=jsonable_encoder(reconciliation), status_code=http_status.HTTP_200_OK)

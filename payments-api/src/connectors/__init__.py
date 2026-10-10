@@ -1,1 +1,3 @@
 from connectors.rest_connector import BaseConnectorResponse, RestConnector
+from connectors.card_provider_connector import CardProviderConnector
+from connectors.pix_provider_connector import PixProviderConnector

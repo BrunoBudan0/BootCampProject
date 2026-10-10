@@ -1,5 +1,6 @@
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, SmallInteger, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 
 from models.base import Base
 
@@ -27,6 +28,10 @@ class Transaction(Base):
         UniqueConstraint("reverses_transaction_id", name="uq_transaction_reversal"),
     )
 
+    source_account = relationship("Account", foreign_keys=[source_account_id], lazy="joined")
+    destination_account = relationship("Account", foreign_keys=[destination_account_id], lazy="joined")
+    reversed_transaction = relationship("Transaction", remote_side=[id], foreign_keys=[reverses_transaction_id])
+
     BALANCE_METHOD = "balance"
     CARD_METHOD = "card"
     PIX_METHOD = "pix"
@@ -36,3 +41,5 @@ class Transaction(Base):
     SETTLED_STATUS = "settled"
     REVERSED_STATUS = "reversed"
     CANCELED_STATUS = "canceled"
+
+    STATUSES_THAT_MOVED_MONEY = (SETTLED_STATUS, REVERSED_STATUS)

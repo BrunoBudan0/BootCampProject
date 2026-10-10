@@ -10,7 +10,7 @@ from middlewares import (
     register_request_logger_middleware,
     register_session_manager_middleware,
 )
-from resources import HealthCheckResource, AccountResource
+from resources import AccountResource, HealthCheckResource, RechargeResource, TransactionResource
 from utils.logger import setup_logging
 
 
@@ -136,8 +136,28 @@ def create_app() -> FastAPI:
     )
 
     account_resource = AccountResource()
+    transaction_resource = TransactionResource()
+    recharge_resource = RechargeResource()
+
     application.add_api_route("/internal/accounts", account_resource.on_post_internal, methods=["POST"])
+    application.add_api_route(
+        "/internal/accounts/{account_id}/block", account_resource.on_put_internal_block, methods=["PUT"]
+    )
+    application.add_api_route(
+        "/internal/events/{event_id}/reconciliation",
+        account_resource.on_get_internal_event_reconciliation,
+        methods=["GET"],
+    )
+    application.add_api_route("/internal/transactions", transaction_resource.on_post_internal, methods=["POST"])
+    application.add_api_route("/internal/reversals", transaction_resource.on_post_internal_reversal, methods=["POST"])
+
+    application.add_api_route("/accounts", account_resource.on_get_list, methods=["GET"])
     application.add_api_route("/accounts/{account_id}", account_resource.on_get_by_id, methods=["GET"])
+    application.add_api_route("/accounts/{account_id}/statement", transaction_resource.on_get_statement, methods=["GET"])
+    application.add_api_route("/transactions/{transaction_id}", transaction_resource.on_get_by_id, methods=["GET"])
+    application.add_api_route("/transfers", transaction_resource.on_post_transfer, methods=["POST"])
+    application.add_api_route("/recharges", recharge_resource.on_post, methods=["POST"])
+    application.add_api_route("/webhooks/pix/{transaction_id}", recharge_resource.on_put_pix_webhook, methods=["PUT"])
 
     # As rotas deste serviço entram aqui, uma linha por endereço e verbo,
     # seguindo a tabela de rotas da RFC.

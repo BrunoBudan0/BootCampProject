@@ -92,6 +92,7 @@ precisa perguntar antes de agir.
 Ensinar um custo que não existe é pior do que não ensinar nada.
 """
 
+import uuid
 from contextvars import ContextVar
 from typing import Optional
 
@@ -142,6 +143,8 @@ class Context:
 
     def __init__(self) -> None:
         self.db_session: Optional[Session] = None
+        self.caller_id: Optional[uuid.UUID] = None
+        self.caller_type: Optional[str] = None
 
     def get_or_create_session(self) -> Session:
         if self.db_session is None:

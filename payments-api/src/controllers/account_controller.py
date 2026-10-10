@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 
 from controllers.base_controller import BaseController
 from dtos import AccountDTO
-from errors import IdempotencyKeyConflict, NotFoundAccount
+from errors import IdempotencyKeyConflict, InvalidParameter, NotFoundAccount
 from repositories import AccountRepository
 
 class AccountController(BaseController):
@@ -42,15 +42,36 @@ class AccountController(BaseController):
         return account_dto, True
 
     def get_account_for_caller(self, account_id: str) -> dict:
-        account = self._find_account_owned_by_caller(account_id)
+        account = self.find_account_owned_by_caller(account_id)
         return AccountDTO.obj_to_dict(account)
 
-    def _find_account_owned_by_caller(self, account_id: str):
-        account_key = self._parse_account_key(account_id)
-        if account_key is None:
-            raise NotFoundAccount(account_id)
+    def list_accounts_for_caller(self) -> dict:
+        caller_id = self.context.caller_id
+        if caller_id is None:
+            return {"data": []}
 
-        account = self.account_repository.get_account_by_key(account_key)
+        accounts = self.account_repository.list_accounts_by_holder(caller_id)
+        return {"data": AccountDTO.list_to_dict(accounts)}
+
+    def set_account_blocked(self, account_id: str, blocked: bool) -> dict:
+        account = self.find_account_or_fail(account_id)
+        self.account_repository.update_account_blocked_status(account.id, blocked)
+
+        account_dto = AccountDTO.obj_to_dict(account)
+        self.session.commit()
+        self.logger.info(f"Account {account_dto['id']} blocked={blocked}")
+        return account_dto
+
+    def reconcile_event(self, event_id: str) -> dict:
+        event_key = parse_uuid_or_none(event_id)
+        if event_key is None:
+            raise InvalidParameter(f"event id {event_id} is not a UUID")
+
+        accounts_with_history = self.account_repository.list_accounts_of_event_with_history(event_key)
+        return AccountDTO.reconciliation_to_dict(event_key, accounts_with_history)
+
+    def find_account_owned_by_caller(self, account_id: str):
+        account = self._find_account_or_none(account_id)
         caller_id = self.context.caller_id
         caller_owns_account = account is not None and caller_id is not None and account.holder_id == caller_id
 
@@ -59,11 +80,19 @@ class AccountController(BaseController):
 
         return account
 
-    def _parse_account_key(self, account_id: str):
-        try:
-            return uuid.UUID(account_id)
-        except ValueError:
+    def find_account_or_fail(self, account_id: str):
+        account = self._find_account_or_none(account_id)
+        if account is None:
+            raise NotFoundAccount(account_id)
+
+        return account
+
+    def _find_account_or_none(self, account_id: str):
+        account_key = parse_uuid_or_none(account_id)
+        if account_key is None:
             return None
+
+        return self.account_repository.get_account_by_key(account_key)
 
     def _replay(self, account, payload: dict) -> dict:
         same_request = (
@@ -81,5 +110,12 @@ class AccountController(BaseController):
         if "holder_id" not in payload:
             return None
         return uuid.UUID(payload["holder_id"])
+
+
+def parse_uuid_or_none(raw_value: str):
+    try:
+        return uuid.UUID(raw_value)
+    except (TypeError, ValueError):
+        return None
 
     
