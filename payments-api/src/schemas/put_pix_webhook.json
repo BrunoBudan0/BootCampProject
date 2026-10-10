@@ -1,0 +1,10 @@
+{
+  "title": "PutPixWebhook",
+  "type": "object",
+  "properties": {
+    "status": { "enum": ["paid", "expired"] },
+    "amount_cents": { "type": "integer" }
+  },
+  "required": ["status", "amount_cents"],
+  "additionalProperties": false
+}

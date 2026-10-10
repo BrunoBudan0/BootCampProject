@@ -8,3 +8,181 @@ from errors import QIException
 # O formato de cada classe é o do template: code, title, http_status,
 # description (inglês) e translation (português). Código repetido
 # derruba a API na subida, de propósito (error_verification).
+
+class IdempotencyKeyConflict(QIException):
+    code = "QIT002025"
+
+    def __init__(self, idempotency_key) -> None:
+
+        title = "Idempotency key conflict"
+        http_status = 409
+        description = f"The Key {idempotency_key} was already used with different content."
+        translation = "Esta chave já foi usada com outro conteúdo."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class NotFoundAccount(QIException):
+    """A conta não existe — OU não é de quem chama.
+
+    Os dois casos respondem exatamente igual, de propósito (R8): com um
+    403 para "existe mas não é sua", quem varre ids aprenderia quais
+    contas existem.
+    """
+
+    code = "QIT002020"
+
+    def __init__(self, account_id) -> None:
+        title = "Account not found"
+        http_status = 404
+        description = f"Account {account_id} was not found."
+        translation = "Conta não encontrada."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class InsufficientBalance(QIException):
+    code = "QIT002021"
+
+    def __init__(self, amount_cents) -> None:
+        title = "Insufficient balance"
+        http_status = 409
+        description = f"The account does not have enough balance for {amount_cents} cents."
+        translation = "Saldo insuficiente para esta operação."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class BlockedAccount(QIException):
+    code = "QIT002022"
+
+    def __init__(self, account_id) -> None:
+        title = "Account blocked"
+        http_status = 409
+        description = f"Account {account_id} is blocked."
+        translation = "A conta está bloqueada."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class NotFoundTransaction(QIException):
+    """A transação não existe — OU não envolve conta de quem chama (R8)."""
+
+    code = "QIT002023"
+
+    def __init__(self, transaction_id) -> None:
+        title = "Transaction not found"
+        http_status = 404
+        description = f"Transaction {transaction_id} was not found."
+        translation = "Transação não encontrada."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class InvalidStatusTransition(QIException):
+    code = "QIT002024"
+
+    def __init__(self, current_status, new_status) -> None:
+        title = "Invalid status transition"
+        http_status = 409
+        description = f"A transaction in status {current_status} cannot become {new_status}."
+        translation = "A transação não pode mudar para este status."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class AlreadyReversed(QIException):
+    code = "QIT002026"
+
+    def __init__(self, idempotency_key) -> None:
+        title = "Already reversed"
+        http_status = 409
+        description = f"The transactions of key {idempotency_key} were already reversed or are not settled."
+        translation = "Estas transações já foram estornadas."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class InvalidAmount(QIException):
+    """Valor zero ou negativo em qualquer rota de dinheiro.
+
+    422, e não 400: o corpo chegou no formato certo (um inteiro), e é o
+    valor que não pode existir. Um negativo seria uma transferência ao
+    contrário, disfarçada.
+    """
+
+    code = "QIT002028"
+
+    def __init__(self, amount_cents) -> None:
+        title = "Invalid amount"
+        http_status = 422
+        description = f"Amount must be greater than zero, got {amount_cents}."
+        translation = "O valor precisa ser maior que zero."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class SameAccount(QIException):
+    code = "QIT002029"
+
+    def __init__(self) -> None:
+        title = "Same account"
+        http_status = 422
+        description = "Source and destination must be different accounts."
+        translation = "A origem e o destino precisam ser contas diferentes."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class DifferentEvents(QIException):
+    """O dinheiro não atravessa a fronteira do evento: cada evento fecha em zero sozinho."""
+
+    code = "QIT002030"
+
+    def __init__(self) -> None:
+        title = "Accounts of different events"
+        http_status = 422
+        description = "Source and destination accounts belong to different events."
+        translation = "As contas são de eventos diferentes."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class ProviderUnavailable(QIException):
+    """O provedor de fora falhou, demorou ou respondeu sem JSON.
+
+    502 diz "o problema não foi aqui dentro": no dia do incidente, é o que
+    decide de que lado procurar.
+    """
+
+    code = "QIT002031"
+
+    def __init__(self, provider) -> None:
+        title = "Provider unavailable"
+        http_status = 502
+        description = f"The {provider} provider did not answer as expected."
+        translation = "O provedor de pagamento não respondeu. Tente de novo."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class CardDeclined(QIException):
+    code = "QIT002033"
+
+    def __init__(self) -> None:
+        title = "Card declined"
+        http_status = 422
+        description = "The card provider declined the authorization."
+        translation = "O cartão foi recusado."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class InvalidPixSignature(QIException):
+    code = "QIT002034"
+
+    def __init__(self) -> None:
+        title = "Invalid signature"
+        http_status = 401
+        description = "The webhook signature does not match its body."
+        translation = "A assinatura do aviso de pagamento não confere."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class PixAmountMismatch(QIException):
+    code = "QIT002035"
+
+    def __init__(self, charged_cents, paid_cents) -> None:
+        title = "Pix amount mismatch"
+        http_status = 422
+        description = f"Charged {charged_cents} cents but {paid_cents} cents were paid."
+        translation = "O valor pago é diferente do valor cobrado."
+        super().__init__(title, self.code, http_status, description, translation)

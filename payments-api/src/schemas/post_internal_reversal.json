@@ -1,0 +1,10 @@
+{
+  "title": "PostInternalReversal",
+  "type": "object",
+  "properties": {
+    "original_idempotency_key": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 80 }
+  },
+  "required": ["original_idempotency_key", "idempotency_key"],
+  "additionalProperties": false
+}

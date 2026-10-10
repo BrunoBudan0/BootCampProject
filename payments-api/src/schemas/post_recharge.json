@@ -1,0 +1,16 @@
+{
+  "title": "PostRecharge",
+  "type": "object",
+  "properties": {
+    "account_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "payment_method": { "enum": ["card", "pix"] },
+    "amount_cents": { "type": "integer" },
+    "card_token": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 80 }
+  },
+  "required": ["account_id", "payment_method", "amount_cents", "idempotency_key"],
+  "additionalProperties": false,
+  "if": { "properties": { "payment_method": { "const": "card" } } },
+  "then": { "required": ["card_token"] },
+  "else": { "not": { "required": ["card_token"] } }
+}
