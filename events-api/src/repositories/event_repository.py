@@ -38,13 +38,14 @@ class EventRepository:
         return self._current(CashbackRate, event_id)
 
     def _current(self, model, event_id):
+        # todo evento nasce com tarifa e cashback; faltar é bug, e o one() estoura
         query = (
             select(model)
             .where(model.event_id == event_id)
             .order_by(model.created_at.desc())
             .limit(1)
         )
-        return self.session.scalars(query).first()
+        return self.session.scalars(query).one()
 
     def list_cashback_rates(self, event_id):
         query = (

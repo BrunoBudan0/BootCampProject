@@ -1,7 +1,5 @@
 import uuid
-
 import pytest
-
 from utils.purchase_math import CartLine, PricedLine, calculate, normalize_cart, percent_of
 
 def line(price, quantity=1, name="Livro"):

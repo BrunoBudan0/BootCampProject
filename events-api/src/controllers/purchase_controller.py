@@ -6,6 +6,7 @@ from errors import (
     CredentialBlocked,
     CredentialNotFound,
     EventClosed,
+    IdempotencyKeyReused,
     InsufficientStock,
     NotAllowedForUserType,
     ProductInactive,
@@ -16,6 +17,7 @@ from repositories import (
     EventAttendeeRepository,
     EventCompanyRepository,
     EventRepository,
+    KeyAlreadyUsed,
     PurchaseRepository,
 )
 from utils.purchase_math import calculate, normalize_cart
@@ -29,9 +31,16 @@ class PurchaseController(BaseController):
         self.credentials = EventAttendeeRepository(self.session)
         self.purchases = PurchaseRepository(self.session)
 
-    def create_purchase(self, user_id: uuid.UUID, user_type: str, payload: dict) -> dict:
+    def create_purchase(self, user_id: uuid.UUID, user_type: str, payload: dict) -> tuple[dict, bool]:
         if user_type != UserType.ATTENDEE.value:
             raise NotAllowedForUserType()
+
+        cart = normalize_cart(payload["items"])
+        key = payload["idempotency_key"]
+
+        existing = self.purchases.get_by_key(key)
+        if existing is not None:
+            return self._replay(existing, user_id, payload, cart), False
 
         credential = self.credentials.get_by_id(uuid.UUID(payload["event_attendee_id"]))
         if credential is None or credential.attendee_id != user_id:
@@ -44,10 +53,9 @@ class PurchaseController(BaseController):
             raise ProductNotFound()
 
         event = self.events.get_by_id(credential.event_id)
-        if not event.active:
+        if event is None or not event.active:
             raise EventClosed()
 
-        cart = normalize_cart(payload["items"])
         self._check_products(cart, stand.id)
 
         # baixa na ordem do id: duas compras dos mesmos produtos não se travam
@@ -75,13 +83,36 @@ class PurchaseController(BaseController):
             fee_cents=amounts.fee_cents,
             cashback_rate_id=cashback_rate.id,
             cashback_cents=amounts.cashback_cents,
-            idempotency_key=payload["idempotency_key"],
+            idempotency_key=key,
         )
-        items = self.purchases.add(purchase, lines)
+        try:
+            items = self.purchases.add(purchase, lines)
+        except KeyAlreadyUsed:
+            # outra requisição com a mesma chave gravou primeiro; o rollback devolveu o estoque
+            existing = self.purchases.get_by_key(key)
+            return self._replay(existing, user_id, payload, cart), False
+
         self.session.commit()
 
         self.logger.info(f"compra {purchase.id} reservada: {amounts.total_cents} centavos")
-        return receipt_to_dict(purchase, items, stand)
+        return receipt_to_dict(purchase, items, stand), True
+
+    def _replay(self, purchase: Purchase, user_id, payload: dict, cart) -> dict:
+        credential = self.credentials.get_by_id(purchase.event_attendee_id)
+        items = self.purchases.items_of(purchase.id)
+
+        same = (
+            credential is not None
+            and credential.attendee_id == user_id
+            and str(purchase.event_attendee_id) == payload["event_attendee_id"].lower()
+            and str(purchase.event_company_id) == payload["event_company_id"].lower()
+            and [(i.product_id, i.quantity) for i in items] == [(l.product_id, l.quantity) for l in cart]
+        )
+        if not same:
+            raise IdempotencyKeyReused()
+
+        self.logger.info(f"reenvio da compra {purchase.id}, nada foi cobrado de novo")
+        return receipt_to_dict(purchase, items, self.stands.get_by_id(purchase.event_company_id))
 
     def _check_products(self, cart, stand_id) -> None:
         products = self.purchases.products_of_cart(cart)

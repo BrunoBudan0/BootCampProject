@@ -2,14 +2,30 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from errors import IdempotencyKeyReused
 from models import Product, Purchase, PurchaseProduct
 from utils.purchase_math import CartLine, PricedLine
+
+
+class KeyAlreadyUsed(Exception):
+    pass
 
 
 class PurchaseRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def get_by_key(self, idempotency_key: str):
+        return self.session.scalars(
+            select(Purchase).where(Purchase.idempotency_key == idempotency_key)
+        ).first()
+
+    def items_of(self, purchase_id) -> list[PurchaseProduct]:
+        query = (
+            select(PurchaseProduct)
+            .where(PurchaseProduct.purchase_id == purchase_id)
+            .order_by(PurchaseProduct.product_id)
+        )
+        return list(self.session.scalars(query))
 
     def products_of_cart(self, cart: list[CartLine]) -> dict:
         ids = [line.product_id for line in cart]
@@ -55,7 +71,7 @@ class PurchaseRepository:
         except IntegrityError as error:
             self.session.rollback()
             if "uq_purchase_idempotency" in str(error.orig):
-                raise IdempotencyKeyReused()
+                raise KeyAlreadyUsed()
             raise
 
         self.session.add_all(items)

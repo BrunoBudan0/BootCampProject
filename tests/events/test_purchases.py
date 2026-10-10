@@ -164,3 +164,66 @@ class TestConcurrency:
         assert results == [201] * 10
         assert get_product(fair.product_id)["stock"] == 990
         assert get_product(other)["stock"] == 990
+        
+
+class TestIdempotency:
+    def test_resend_returns_the_same_purchase(self):
+        fair = Fair(stock=10)
+        key = f"app-{uuid.uuid4().hex}"
+
+        first = fair.buy(key=key)
+        second = fair.buy(key=key)
+
+        assert first.status_code == 201
+        assert second.status_code == 200
+        assert second.json()["id"] == first.json()["id"]
+        assert get_product(fair.product_id)["stock"] == 9
+
+    def test_same_cart_in_another_order_is_still_a_resend(self):
+        fair = Fair(stock=10)
+        other = create_product(fair.company_id, fair.stand_id, stock=10)
+        key = f"app-{uuid.uuid4().hex}"
+
+        fair.buy([{"product_id": fair.product_id, "quantity": 2}, {"product_id": other, "quantity": 1}], key=key)
+        response = fair.buy([
+            {"product_id": other, "quantity": 1},
+            {"product_id": fair.product_id, "quantity": 1},
+            {"product_id": fair.product_id, "quantity": 1},
+        ], key=key)
+
+        assert response.status_code == 200
+        assert get_product(fair.product_id)["stock"] == 8
+
+    def test_same_key_with_another_cart_is_refused(self):
+        fair = Fair(stock=10)
+        key = f"app-{uuid.uuid4().hex}"
+        fair.buy(key=key)
+
+        response = fair.buy([{"product_id": fair.product_id, "quantity": 5}], key=key)
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "QIT002025"
+        assert get_product(fair.product_id)["stock"] == 9
+
+    def test_key_of_someone_else_never_shows_their_receipt(self):
+        fair = Fair(stock=10)
+        key = f"app-{uuid.uuid4().hex}"
+        fair.buy(key=key)
+        stranger, stranger_credential = take_credential(fair.event_id)
+
+        response = fair.buy(key=key, attendee=stranger, credential_id=stranger_credential)
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "QIT002025"
+
+    def test_double_click_at_the_same_time_buys_once(self):
+        fair = Fair(stock=10)
+        key = f"app-{uuid.uuid4().hex}"
+
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            responses = list(pool.map(lambda _: fair.buy(key=key), range(10)))
+
+        statuses = sorted(r.status_code for r in responses)
+        assert statuses == [200] * 9 + [201]
+        assert len({r.json()["id"] for r in responses}) == 1
+        assert get_product(fair.product_id)["stock"] == 9
