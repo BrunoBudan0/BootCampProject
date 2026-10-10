@@ -9,7 +9,7 @@ from middlewares import (
     register_request_logger_middleware,
     register_session_manager_middleware,
 )
-from resources import EventResource, HealthCheckResource, ProductResource
+from resources import EventResource, HealthCheckResource, ProductResource, PurchaseResource
 from utils.logger import setup_logging
 
 
@@ -150,7 +150,9 @@ def create_app() -> FastAPI:
     application.add_api_route("/products", product_resource.on_get_list, methods=["GET"])
     application.add_api_route("/products/{product_id}", product_resource.on_get, methods=["GET"])
     application.add_api_route("/products/{product_id}", product_resource.on_put, methods=["PUT"])
+    purchase_resource = PurchaseResource()
 
+    application.add_api_route("/purchases", purchase_resource.on_post, methods=["POST"])
     register_error_handlers(application)
 
     return application

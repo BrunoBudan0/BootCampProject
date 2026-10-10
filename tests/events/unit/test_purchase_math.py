@@ -4,11 +4,8 @@ import pytest
 
 from utils.purchase_math import CartLine, PricedLine, calculate, normalize_cart, percent_of
 
-
 def line(price, quantity=1, name="Livro"):
     return PricedLine(uuid.uuid4(), name, price, quantity)
-
-
 class TestNormalizeCart:
     def test_same_product_twice_becomes_one_line(self):
         product = uuid.uuid4()
@@ -28,8 +25,6 @@ class TestNormalizeCart:
         ])
 
         assert [line.product_id for line in cart] == [a, b, c]
-
-
 class TestCalculate:
     def test_example_from_the_rfc(self):
         # R$ 40,00 com tarifa de 5% e cashback de 2%

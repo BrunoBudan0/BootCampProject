@@ -49,3 +49,25 @@ def create_stand(organizer_id, event_id, company_id, stand_name="Livraria A"):
     )
     assert response.status_code == 201, response.text
     return response.json()["id"]
+
+def create_product(company_id, stand_id, price_cents=4000, stock=10, barcode=None):
+    response = events.send("POST", "/products", json={
+        "event_company_id": stand_id,
+        "name": "Dom Casmurro",
+        "barcode": barcode or uuid.uuid4().hex[:13],
+        "price_cents": price_cents,
+        "stock": stock,
+    }, headers=headers("company", company_id))
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+def take_credential(event_id, attendee_id=None):
+    attendee_id = attendee_id or uuid.uuid4()
+    response = events.send("POST", f"/events/{event_id}/attendees", headers=headers("attendee", attendee_id))
+    assert response.status_code == 201, response.text
+    return attendee_id, response.json()["id"]
+
+
+def get_product(product_id):
+    return events.send("GET", f"/products/{product_id}", headers=headers("attendee")).json()
