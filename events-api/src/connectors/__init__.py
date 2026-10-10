@@ -1,1 +1,3 @@
 from connectors.rest_connector import BaseConnectorResponse, RestConnector
+from connectors.rest_connector import RestConnector, BaseConnectorResponse
+from connectors.payments_connector import PaymentsConnector
