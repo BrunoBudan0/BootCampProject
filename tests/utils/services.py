@@ -40,11 +40,15 @@ class Service:
         self.base_url = f"http://{HOST}:{os.environ.get(port_variable, default_port)}"
         self.token = os.environ.get(token_variable, default_token)
 
-    def send(self, method, path, json=None, headers=None, token=OWN_TOKEN):
+    def send(self, method, path, json=None, headers=None, token=OWN_TOKEN, params=None, data=None):
         """Faz uma requisição a este serviço e devolve a resposta como veio.
 
         token=OWN_TOKEN (o padrão) manda o token do próprio serviço;
         token=None não manda nenhum; token="outro" manda esse valor.
+
+        `params` vira a query string (?limit=10&page=0). `data` manda o
+        corpo cru, byte a byte — é o que o teste do webhook Pix usa, porque
+        a assinatura é calculada sobre os bytes exatos do corpo.
         """
         all_headers = dict(headers or {})
 
@@ -59,6 +63,8 @@ class Service:
                 method,
                 f"{self.base_url}{path}",
                 json=json,
+                data=data,
+                params=params,
                 headers=all_headers,
                 timeout=TIMEOUT_SECONDS,
             )
