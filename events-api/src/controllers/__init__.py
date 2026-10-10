@@ -1,2 +1,2 @@
-from connectors.rest_connector import RestConnector, BaseConnectorResponse
-from connectors.payments_connector import PaymentsConnector
+from controllers.base_controller import BaseController
+from controllers.event_controller import EventController
