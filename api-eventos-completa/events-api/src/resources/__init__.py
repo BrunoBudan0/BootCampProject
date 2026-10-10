@@ -1,0 +1,5 @@
+from resources.health_check import HealthCheckResource
+from resources.credential_resource import CredentialResource
+from resources.event_resource import EventResource
+from resources.product_resource import ProductResource
+from resources.purchase_resource import PurchaseResource

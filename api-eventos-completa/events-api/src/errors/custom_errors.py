@@ -14,6 +14,19 @@ class NotAllowedForUserType(QIException):
         )
 
 
+class CompanyNotFound(QIException):
+    code = "QIT002009"
+
+    def __init__(self) -> None:
+        super().__init__(
+            title="Company not found",
+            code=self.code,
+            http_status=404,
+            description="The company does not exist.",
+            translation="A empresa não existe.",
+        )
+
+
 class EventNotFound(QIException):
     code = "QIT002010"
 
