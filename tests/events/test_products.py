@@ -2,10 +2,8 @@ import uuid
 
 from tests.utils.services import events
 
-
 def headers(user_type, user_id=None):
     return {"X-User-Id": user_id or str(uuid.uuid4()), "X-User-Type": user_type}
-
 
 def new_product_body(**changes):
     body = {
@@ -17,10 +15,6 @@ def new_product_body(**changes):
     }
     body.update(changes)
     return body
-
-
-# o caminho feliz entra junto com a rota de stand (POST /events/{id}/companies)
-
 class TestCreateProduct:
     def test_only_company_creates(self):
         response = events.send("POST", "/products", json=new_product_body(), headers=headers("attendee"))
@@ -56,8 +50,6 @@ class TestSearchProducts:
 
         assert response.status_code == 200
         assert response.json()["data"] == []
-
-
 class TestGetAndUpdateProduct:
     def test_unknown_product_is_404(self):
         response = events.send("GET", f"/products/{uuid.uuid4()}", headers=headers("attendee"))
@@ -73,10 +65,7 @@ class TestGetAndUpdateProduct:
         assert response.status_code == 404
         assert response.json()["code"] == "QIT002016"
 
-        
-
 class TestProductOnRealStand:
-    # precisa de Usuários e Pagamentos de pé
     def test_company_creates_and_attendee_scans(self):
         from tests.events.helpers import create_company, create_event, create_stand
 

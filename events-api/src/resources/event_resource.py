@@ -1,7 +1,7 @@
 from fastapi import Body, Request, status
 from fastapi.responses import JSONResponse
 
-from controllers import EventController, ParticipantController
+from controllers import EventController, ParticipantController, RateController
 from utils.caller import get_caller, parse_uuid
 from utils.schema_handler import SchemaHandler
 
@@ -39,3 +39,19 @@ class EventResource:
         user_id, user_type = get_caller(request)
         body = ParticipantController().add_attendee(user_id, user_type, parse_uuid(event_id, "id"))
         return JSONResponse(content=body, status_code=status.HTTP_201_CREATED)
+    @SchemaHandler.validate("change_rate.json")
+    def on_put_fee_rate(self, request: Request, event_id: str, payload: dict = Body(...)) -> JSONResponse:
+        user_id, user_type = get_caller(request)
+        body = RateController().change_fee_rate(user_id, user_type, parse_uuid(event_id, "id"), payload)
+        return JSONResponse(content=body, status_code=status.HTTP_201_CREATED)
+
+    @SchemaHandler.validate("change_rate.json")
+    def on_put_cashback_rate(self, request: Request, event_id: str, payload: dict = Body(...)) -> JSONResponse:
+        user_id, user_type = get_caller(request)
+        body = RateController().change_cashback_rate(user_id, user_type, parse_uuid(event_id, "id"), payload)
+        return JSONResponse(content=body, status_code=status.HTTP_201_CREATED)
+
+    def on_get_cashback_rates(self, request: Request, event_id: str) -> JSONResponse:
+        user_id, user_type = get_caller(request)
+        body = RateController().list_cashback_rates(user_id, user_type, parse_uuid(event_id, "id"))
+        return JSONResponse(content=body, status_code=status.HTTP_200_OK)

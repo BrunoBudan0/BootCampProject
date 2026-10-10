@@ -1,3 +1,5 @@
-from connectors.rest_connector import RestConnector, BaseConnectorResponse
-from connectors.payments_connector import PaymentsConnector
-from connectors.users_connector import UsersConnector
+from controllers.base_controller import BaseController
+from controllers.event_controller import EventController
+from controllers.participant_controller import ParticipantController
+from controllers.product_controller import ProductController
+from controllers.rate_controller import RateController

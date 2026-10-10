@@ -15,6 +15,11 @@ class EventRepository:
     def get_by_id(self, event_id):
         return self.session.get(Event, event_id)
 
+    def get_for_update(self, event_id):
+        # trava o evento: duas mudanças de taxa no mesmo evento fazem fila
+        query = select(Event).where(Event.id == event_id).with_for_update()
+        return self.session.scalars(query).first()
+
     def list(self, limit: int, page: int) -> tuple[list[Event], bool]:
         # busca um a mais só pra saber se tem próxima página
         query = (
@@ -40,3 +45,11 @@ class EventRepository:
             .limit(1)
         )
         return self.session.scalars(query).first()
+
+    def list_cashback_rates(self, event_id):
+        query = (
+            select(CashbackRate)
+            .where(CashbackRate.event_id == event_id)
+            .order_by(CashbackRate.created_at.desc())
+        )
+        return self.session.scalars(query).all()

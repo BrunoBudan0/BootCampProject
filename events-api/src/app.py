@@ -140,6 +140,9 @@ def create_app() -> FastAPI:
     application.add_api_route("/events/{event_id}", event_resource.on_get, methods=["GET"])
     application.add_api_route("/events/{event_id}/companies", event_resource.on_post_company, methods=["POST"])
     application.add_api_route("/events/{event_id}/attendees", event_resource.on_post_attendee, methods=["POST"])
+    application.add_api_route("/events/{event_id}/fee-rate", event_resource.on_put_fee_rate, methods=["PUT"])
+    application.add_api_route("/events/{event_id}/cashback-rate", event_resource.on_put_cashback_rate, methods=["PUT"])
+    application.add_api_route("/events/{event_id}/cashback-rates", event_resource.on_get_cashback_rates, methods=["GET"])
 
     product_resource = ProductResource()
 
