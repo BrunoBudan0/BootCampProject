@@ -11,10 +11,14 @@ from errors.base_error import (
     MethodNotAllowed,
     NotFoundResource,
 )
+from models import CriticalLogPayment
+from repositories import CriticalLogRepository
 from utils.logger import get_logger
 
 
 logger = get_logger(__name__)
+
+WRITING_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 
 
 def qi_exception_to_response(exception: QIException) -> JSONResponse:
@@ -98,4 +102,14 @@ def register_error_handlers(application: FastAPI) -> None:
     @application.exception_handler(Exception)
     def handle_unexpected_error(request: Request, exception: Exception) -> JSONResponse:
         logger.exception(f"Erro inesperado em {request.method} {request.url.path}")
-        return qi_exception_to_response(InternalError())
+        internal_error = InternalError()
+
+        if request.method in WRITING_METHODS:
+            CriticalLogRepository().record(
+                CriticalLogPayment.UNEXPECTED_ERROR,
+                route=request.url.path,
+                http_status=internal_error.http_status,
+                error_code=internal_error.code,
+            )
+
+        return qi_exception_to_response(internal_error)
