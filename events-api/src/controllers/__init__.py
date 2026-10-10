@@ -1,2 +1,3 @@
 from controllers.base_controller import BaseController
 from controllers.event_controller import EventController
+from controllers.product_controller import ProductController

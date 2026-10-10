@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "anyOf": [
+    {"required": ["event_id"]},
+    {"required": ["event_company_id"]}
+  ],
+  "properties": {
+    "event_id": {"type": "string", "pattern": "^[0-9a-fA-F-]{36}$"},
+    "event_company_id": {"type": "string", "pattern": "^[0-9a-fA-F-]{36}$"},
+    "barcode": {"type": "string", "pattern": "^[0-9A-Za-z-]{1,64}$"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 100},
+    "limit": {"type": "string", "pattern": "^([1-9]|[1-9][0-9]|100)$"},
+    "page": {"type": "string", "pattern": "^[1-9][0-9]{0,5}$"}
+  }
+}

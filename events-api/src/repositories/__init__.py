@@ -1,1 +1,3 @@
 from repositories.event_repository import EventRepository
+from repositories.event_company_repository import EventCompanyRepository
+from repositories.product_repository import ProductRepository

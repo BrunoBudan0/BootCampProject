@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 1,
+  "properties": {
+    "name": {"type": "string", "minLength": 1, "maxLength": 255},
+    "price_cents": {"type": "integer"},
+    "stock": {"type": ["integer", "null"], "minimum": 0},
+    "active": {"type": "boolean"}
+  }
+}
