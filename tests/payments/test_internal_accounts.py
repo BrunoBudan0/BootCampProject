@@ -11,6 +11,8 @@ Respostas: 201 a conta · 200 a mesma conta (mesma chave) · 400 QIT000001
            · 403 QIT000002 · 409 QIT002025 (mesma chave, outro conteúdo)
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 from tests.utils.payments import assert_error, is_uuid, new_key, new_uuid
 from tests.utils.services import payments, users
 
@@ -84,6 +86,28 @@ class TestCreateAccount:
         response = create(new_account(idempotency_key=payload["idempotency_key"]))
 
         assert_error(response, 409, "QIT002025")
+
+
+class TestCreateAccountConcurrency:
+    def test_parallel_requests_with_the_same_key_create_one_account(self):
+        """A API de Eventos reenviou o mesmo pedido várias vezes ao mesmo tempo.
+
+        É o único teste que passa pelo caminho do IntegrityError: as
+        requisições atravessam juntas a consulta prévia ("já existe conta
+        com esta chave?"), todas respondem "não", e quem fecha a janela é o
+        UNIQUE do banco. A que perde a corrida tem de responder como replay
+        (200, a mesma conta) — nunca 500 e nunca 409, porque o pedido é o
+        mesmo.
+        """
+        payload = new_account()
+
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            responses = list(pool.map(lambda _: create(payload), range(10)))
+
+        statuses = [response.status_code for response in responses]
+        assert statuses.count(201) == 1, statuses
+        assert set(statuses) <= {200, 201}, statuses
+        assert len({response.json()["id"] for response in responses}) == 1
 
 
 class TestCreateAccountRefusals:

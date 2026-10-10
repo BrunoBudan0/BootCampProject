@@ -21,13 +21,6 @@ class AccountRepository:
 
         return account
     
-    def update_account_balance(self, account_id, new_balance_cents):
-        account = self.get_account_by_id(account_id)
-        if account:
-            account.balance_cents = new_balance_cents
-            self.session.flush()
-            return account
-        return None
     
     def update_account_blocked_status(self, account_id, status_blocked):
         account = self.get_account_by_id(account_id)
@@ -37,7 +30,6 @@ class AccountRepository:
             return account
         return None
 
-    # Tenho que  criar uma função para atualizar o update_at?
 
     def get_account_by_idempotency_key(self, idempotency_key):
         return self.session.query(Account).filter_by(idempotency_key=idempotency_key).first()
@@ -47,6 +39,4 @@ class AccountRepository:
 
     def get_account_by_id(self, account_id):
         return self.session.query(Account).filter_by(id=account_id).first()
-
-    # Tem que ter alguma função para o kind?
 

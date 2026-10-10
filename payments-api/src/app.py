@@ -9,7 +9,7 @@ from middlewares import (
     register_request_logger_middleware,
     register_session_manager_middleware,
 )
-from resources import HealthCheckResource
+from resources import HealthCheckResource, AccountResource
 from utils.logger import setup_logging
 
 
@@ -130,6 +130,9 @@ def create_app() -> FastAPI:
         health_check_resource.on_get_health_check,
         methods=["GET"]
     )
+
+    account_resource = AccountResource()
+    application.add_api_route("/internal/accounts", account_resource.on_post_internal, methods=["POST"])
 
     # As rotas deste serviço entram aqui, uma linha por endereço e verbo,
     # seguindo a tabela de rotas da RFC.
