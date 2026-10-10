@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 
 from controllers.base_controller import BaseController
 from dtos import AccountDTO
-from errors import IdempotencyKeyConflict
+from errors import IdempotencyKeyConflict, NotFoundAccount
 from repositories import AccountRepository
 
 class AccountController(BaseController):
@@ -40,7 +40,31 @@ class AccountController(BaseController):
         self.session.commit()
         self.logger.info(f"Account created: {account_dto['id']}, kind={account.kind}")
         return account_dto, True
-    
+
+    def get_account_for_caller(self, account_id: str) -> dict:
+        account = self._find_account_owned_by_caller(account_id)
+        return AccountDTO.obj_to_dict(account)
+
+    def _find_account_owned_by_caller(self, account_id: str):
+        account_key = self._parse_account_key(account_id)
+        if account_key is None:
+            raise NotFoundAccount(account_id)
+
+        account = self.account_repository.get_account_by_key(account_key)
+        caller_id = self.context.caller_id
+        caller_owns_account = account is not None and caller_id is not None and account.holder_id == caller_id
+
+        if not caller_owns_account:
+            raise NotFoundAccount(account_id)
+
+        return account
+
+    def _parse_account_key(self, account_id: str):
+        try:
+            return uuid.UUID(account_id)
+        except ValueError:
+            return None
+
     def _replay(self, account, payload: dict) -> dict:
         same_request = (
             account.event_id == uuid.UUID(payload["event_id"]) 

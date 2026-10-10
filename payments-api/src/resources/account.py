@@ -18,3 +18,9 @@ class AccountResource:
             status_code = http_status.HTTP_200_OK
 
         return JSONResponse(content=jsonable_encoder(account_dto), status_code=status_code)
+
+    def on_get_by_id(self, account_id: str) -> JSONResponse:
+        controller = AccountController()
+        account_dto = controller.get_account_for_caller(account_id)
+
+        return JSONResponse(content=jsonable_encoder(account_dto), status_code=http_status.HTTP_200_OK)

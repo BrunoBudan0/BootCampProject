@@ -56,6 +56,20 @@ class TestGetAccount:
 
         assert_error(response, 404, "QIT002020")
 
+    def test_request_without_caller_sees_no_user_account(self):
+        account = Event().user_account()
+
+        response = payments.send("GET", f"/accounts/{account['id']}")
+
+        assert_error(response, 404, "QIT002020")
+
+    def test_request_without_caller_cannot_reach_system_account(self):
+        event = Event()
+
+        response = payments.send("GET", f"/accounts/{event.fee['id']}")
+
+        assert_error(response, 404, "QIT002020")
+
     def test_system_accounts_belong_to_nobody(self):
         event = Event()
 
