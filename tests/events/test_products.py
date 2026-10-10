@@ -72,3 +72,37 @@ class TestGetAndUpdateProduct:
 
         assert response.status_code == 404
         assert response.json()["code"] == "QIT002016"
+
+        
+
+class TestProductOnRealStand:
+    # precisa de Usuários e Pagamentos de pé
+    def test_company_creates_and_attendee_scans(self):
+        from tests.events.helpers import create_company, create_event, create_stand
+
+        organizer = uuid.uuid4()
+        event_id = create_event(organizer)
+        company_id = create_company()
+        stand_id = create_stand(organizer, event_id, company_id)
+
+        created = events.send(
+            "POST", "/products",
+            json=new_product_body(event_company_id=stand_id),
+            headers=headers("company", company_id),
+        )
+        assert created.status_code == 201
+
+        duplicated = events.send(
+            "POST", "/products",
+            json=new_product_body(event_company_id=stand_id),
+            headers=headers("company", company_id),
+        )
+        assert duplicated.status_code == 409
+        assert duplicated.json()["code"] == "QIT002018"
+
+        scanned = events.send(
+            "GET", f"/products?event_company_id={stand_id}&barcode=9788535910663",
+            headers=headers("attendee"),
+        )
+        assert scanned.status_code == 200
+        assert [p["id"] for p in scanned.json()["data"]] == [created.json()["id"]]

@@ -138,6 +138,8 @@ def create_app() -> FastAPI:
     application.add_api_route("/events", event_resource.on_post, methods=["POST"])
     application.add_api_route("/events", event_resource.on_get_list, methods=["GET"])
     application.add_api_route("/events/{event_id}", event_resource.on_get, methods=["GET"])
+    application.add_api_route("/events/{event_id}/companies", event_resource.on_post_company, methods=["POST"])
+    application.add_api_route("/events/{event_id}/attendees", event_resource.on_post_attendee, methods=["POST"])
 
     product_resource = ProductResource()
 
@@ -152,8 +154,6 @@ def create_app() -> FastAPI:
 
 
 def main() -> FastAPI:
-    # Não deixa a API subir com configuração faltando: é melhor falhar
-    # agora, na hora de ligar, do que na cara do cliente mais tarde.
     check_variables()
     error_verification()
     setup_logging()
