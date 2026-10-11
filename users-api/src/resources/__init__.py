@@ -1,1 +1,3 @@
 from resources.health_check import HealthCheckResource
+from resources.registration import RegistrationResource
+from resources.user import UserResource

@@ -1,8 +1,14 @@
+import hmac
+
 from fastapi import FastAPI, Request
 
 from constants import BYPASS_ENDPOINTS, INTERNAL_TOKEN
 from errors.base_error import ForbiddenNotInternal
 from errors.handlers import qi_exception_to_response
+
+
+def internal_token_matches(received_token) -> bool:
+    return hmac.compare_digest((received_token or "").encode("utf-8"), INTERNAL_TOKEN.encode("utf-8"))
 
 
 def register_internal_token_middleware(application: FastAPI) -> None:
@@ -24,7 +30,7 @@ def register_internal_token_middleware(application: FastAPI) -> None:
         if request.method == "OPTIONS" or is_public:
             return await call_next(request)
 
-        if request.headers.get("INTERNAL-TOKEN") != INTERNAL_TOKEN:
+        if not internal_token_matches(request.headers.get("INTERNAL-TOKEN")):
             return qi_exception_to_response(ForbiddenNotInternal())
 
         return await call_next(request)

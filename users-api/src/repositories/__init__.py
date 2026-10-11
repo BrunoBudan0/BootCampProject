@@ -1,0 +1,3 @@
+from repositories.attendee_repository import AttendeeRepository
+from repositories.organizer_repository import OrganizerRepository
+from repositories.company_repository import CompanyRepository
