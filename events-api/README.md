@@ -35,6 +35,11 @@ quem está chamando em `X-User-Id` e `X-User-Type` (`attendee`, `organizer`, `co
   `purchase:{id}`. Reenvio, clique duplo ou resposta perdida devolvem a mesma compra.
 - **Nenhuma transação de banco fica aberta durante uma chamada HTTP.**
 - **Sem deadlock.** O carrinho é ordenado pelo id do produto, e todas as compras travam as linhas na mesma ordem.
+- **Teto de R$ 100 mil por perna.** Preço de produto e recarga em espécie até `10000000` centavos; compra com
+  total acima disso é recusada antes de chamar Pagamentos (`422 QIT002039`), com o estoque devolvido.
+- **Contrato com Pagamentos.** Conta de usuário leva `holder_type` (`company` no stand, `attendee` na credencial);
+  as chaves são `acct:{evento}:{fee|external|dono}` (até 80 caracteres), `purchase:{id}`, `refund:{id}` e `cash:{...}`;
+  as transferências vão sem `type`; o `X-Request-ID` da requisição segue em toda chamada a outro serviço.
 - **Dinheiro só em inteiros.** Tarifa e cashback são `total × bps // 10000`, sempre para baixo, o que
   garante `cashback ≤ tarifa ≤ total`.
 

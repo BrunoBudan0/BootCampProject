@@ -14,7 +14,7 @@ from errors import (
     NotAllowedForUserType,
     UpstreamUnavailable,
 )
-from models import CriticalLogType, Event, TransactionType, UserType
+from models import CriticalLogType, Event, UserType
 from repositories import EventAttendeeRepository, EventRepository, PurchaseRepository
 from utils.critical_log import critical_log
 
@@ -75,7 +75,7 @@ class OperationController(BaseController):
 
         # a chave do app vale só dentro deste evento
         key = f"cash:{uuid.uuid5(event.id, payload['idempotency_key'])}"
-        legs = [(TransactionType.DEPOSIT.value, event.external_account_id, credential.account_id, amount)]
+        legs = [(event.external_account_id, credential.account_id, amount)]
         credential_id = credential.id
 
         self.session.rollback()
@@ -134,6 +134,7 @@ class OperationController(BaseController):
             "ok": ok,
             "sum_cents": sum_cents,
             "mismatches": mismatches,
+            "accounts": report.get("accounts", []),
             "purchases": purchases,
             "fee_net_cents": fee_net,
             "checked_at": datetime.now(timezone.utc).isoformat(),

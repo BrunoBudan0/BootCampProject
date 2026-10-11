@@ -138,7 +138,7 @@ class TestStockUpdate:
         response = self.put({"stock": 10, "expected_stock": 10})
 
         assert response.status_code == 409
-        assert response.json()["code"] == "QIT002027"
+        assert response.json()["code"] == "QIT002038"
         assert get_product(self.fair.product_id)["stock"] == 7
 
     def test_repeating_the_same_put_is_fine(self):

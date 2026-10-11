@@ -158,7 +158,7 @@ class InsufficientStock(QIException):
 
 
 class StockChanged(QIException):
-    code = "QIT002027"
+    code = "QIT002038"
 
     def __init__(self) -> None:
         super().__init__(
@@ -258,4 +258,17 @@ class CashbackAboveFee(QIException):
             http_status=422,
             description="Cashback cannot be above the current fee, nor the fee below the current cashback.",
             translation="O cashback não pode passar da tarifa vigente, nem a tarifa ficar abaixo do cashback.",
+        )
+
+
+class PurchaseAboveLimit(QIException):
+    code = "QIT002039"
+
+    def __init__(self) -> None:
+        super().__init__(
+            title="Purchase above limit",
+            code=self.code,
+            http_status=422,
+            description="The purchase total is above the limit of 10000000 cents.",
+            translation="O total da compra passa do teto de R$ 100.000,00.",
         )

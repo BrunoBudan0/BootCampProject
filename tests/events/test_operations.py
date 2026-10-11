@@ -54,6 +54,14 @@ class TestCashRecharge:
         assert response.status_code == 409
         assert response.json()["code"] == "QIT002025"
 
+    def test_amount_above_the_ceiling_is_refused(self):
+        fair = Fair()
+
+        response = recharge(fair, fair.credential_id, 10_000_001)
+
+        assert response.status_code == 400
+        assert response.json()["code"] == "QIT000001"
+
     def test_amount_must_be_positive(self):
         fair = Fair()
 
@@ -162,6 +170,7 @@ class TestReconciliation:
 
         assert report["ok"] is True
         assert report["sum_cents"] == 0
+        assert len(report["accounts"]) == 4
         assert report["purchases"]["paid"]["count"] == 1
         assert report["purchases"]["refunded"]["count"] == 1
         assert report["fee_net_cents"] == 200

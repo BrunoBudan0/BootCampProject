@@ -23,15 +23,6 @@ class UserType(str, Enum):
 
 
 # donos: API de Pagamentos (usados no POST /internal/transactions)
-class TransactionType(str, Enum):
-    DEPOSIT = "deposit"
-    PURCHASE = "purchase"
-    FEE = "fee"
-    CASHBACK = "cashback"
-    TRANSFER = "transfer"
-    REVERSAL = "reversal"
-
-
 class PaymentMethod(str, Enum):
     BALANCE = "balance"
     CARD = "card"

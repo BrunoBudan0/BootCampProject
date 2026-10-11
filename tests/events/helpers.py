@@ -13,7 +13,8 @@ def random_cnpj():
     for weights in ([5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2], [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]):
         rest = sum(d * w for d, w in zip(base, weights)) % 11
         base.append(0 if rest < 2 else 11 - rest)
-    return "".join(map(str, base))
+    digits = "".join(map(str, base))
+    return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
 
 
 def create_company():

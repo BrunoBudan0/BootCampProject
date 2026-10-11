@@ -44,7 +44,7 @@ class ParticipantController(BaseController):
 
         self.users.ensure_company_exists(company_id)
         account_id = self.payments.create_account(
-            event_id, "user", f"acct:{event_id}:{company_id}", holder_id=company_id
+            event_id, "user", f"acct:{event_id}:{company_id}", holder_id=company_id, holder_type="company"
         )
 
         stand = EventCompany(
@@ -73,7 +73,7 @@ class ParticipantController(BaseController):
         self.session.rollback()
 
         account_id = self.payments.create_account(
-            event_id, "user", f"acct:{event_id}:{user_id}", holder_id=user_id
+            event_id, "user", f"acct:{event_id}:{user_id}", holder_id=user_id, holder_type="attendee"
         )
 
         credential = EventAttendee(event_id=event_id, attendee_id=user_id, account_id=account_id)

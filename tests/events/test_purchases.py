@@ -271,3 +271,32 @@ class TestPayment:
         assert second.json()["status"] == "paid"
         # se tivesse cobrado de novo, 5000 - 3920 = 1080 não pagaria outra de 4000
         assert fair.buy().status_code == 409
+
+
+class TestCeiling:
+    def test_total_above_the_ceiling_is_refused_before_paying(self):
+        fair = Fair(price_cents=10_000_000, stock=5)
+
+        response = fair.buy([{"product_id": fair.product_id, "quantity": 2}])
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "QIT002039"
+        assert get_product(fair.product_id)["stock"] == 5
+
+    def test_price_above_the_ceiling_is_refused(self):
+        fair = Fair()
+
+        response = events.send(
+            "POST", "/products",
+            json={
+                "event_company_id": fair.stand_id,
+                "name": "Edição rara",
+                "barcode": uuid.uuid4().hex[:13],
+                "price_cents": 10_000_001,
+            },
+            headers=headers("company", fair.company_id),
+        )
+
+        assert response.status_code == 400
+        assert response.json()["code"] == "QIT000001"
+

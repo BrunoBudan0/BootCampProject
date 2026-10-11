@@ -5,7 +5,7 @@
   "minProperties": 1,
   "properties": {
     "name": {"type": "string", "minLength": 1, "maxLength": 255},
-    "price_cents": {"type": "integer", "maximum": 100000000},
+    "price_cents": {"type": "integer", "maximum": 10000000},
     "stock": {"type": ["integer", "null"], "minimum": 0, "maximum": 1000000},
     "expected_stock": {"type": ["integer", "null"], "minimum": 0},
     "active": {"type": "boolean"}

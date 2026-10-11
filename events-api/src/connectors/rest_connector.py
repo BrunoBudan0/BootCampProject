@@ -4,6 +4,8 @@ from abc import ABCMeta
 
 import requests
 
+from utils.request_context import NO_REQUEST_ID, get_request_id
+
 from utils.logger import get_logger
 
 
@@ -47,6 +49,11 @@ class RestConnector(metaclass=ABCMeta):
         # lá a gente confere o token de quem chega; aqui a gente manda
         # o token pra quem vamos chamar.
         headers["INTERNAL-TOKEN"] = self.internal_token
+
+        # o mesmo X-Request-ID liga os logs dos dois serviços
+        request_id = get_request_id()
+        if request_id != NO_REQUEST_ID:
+            headers["X-Request-ID"] = request_id
 
         url = f"{self.base_url}{endpoint}"
 

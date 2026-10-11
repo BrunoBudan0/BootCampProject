@@ -33,6 +33,9 @@ PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "")
 PAYMENTS_API_TOKEN = os.environ.get("PAYMENTS_API_TOKEN", "")
 PAYMENTS_API_TIMEOUT = int(os.environ.get("PAYMENTS_API_TIMEOUT", "5"))
 
+# teto de cada perna em Pagamentos (R$ 100 mil): Eventos recusa antes de chamar
+MAX_TRANSFER_CENTS = 10_000_000
+
 # rotina que resolve compras pending (0 desliga)
 PENDING_RETRY_SECONDS = int(os.environ.get("PENDING_RETRY_SECONDS", "30"))
 # compra pending há mais que isso, sem resposta de Pagamentos, vira log crítico

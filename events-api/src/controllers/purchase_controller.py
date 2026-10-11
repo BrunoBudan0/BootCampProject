@@ -1,6 +1,8 @@
 import uuid
+from collections.abc import Callable
 
 from connectors import PaymentsConnector
+from constants import MAX_TRANSFER_CENTS
 from controllers.base_controller import BaseController
 from dtos import receipt_to_dict
 from errors import (
@@ -13,11 +15,13 @@ from errors import (
     NotAllowedForUserType,
     ProductInactive,
     ProductNotFound,
+    PurchaseAboveLimit,
     PurchaseNotFound,
     PurchaseNotRefundable,
+    QIException,
     UpstreamUnavailable,
 )
-from models import CriticalLogType, EventAttendee, EventCompany, Event, Purchase, PurchaseStatus, TransactionType, UserType
+from models import CriticalLogType, EventAttendee, EventCompany, Event, Purchase, PurchaseStatus, UserType
 from repositories import (
     EventAttendeeRepository,
     EventCompanyRepository,
@@ -30,7 +34,7 @@ from utils.critical_log import critical_log
 from utils.purchase_math import PurchaseAmounts, calculate, normalize_cart, purchase_legs
 
 
-CANCEL_ERRORS = {
+CANCEL_ERRORS: dict[str, Callable[[], QIException]] = {
     error.code: error for error in (InsufficientBalance, CredentialBlocked, UpstreamUnavailable)
 }
 
@@ -93,6 +97,10 @@ class PurchaseController(BaseController):
         fee_rate = self.events.current_fee_rate(event.id)
         cashback_rate = self.events.current_cashback_rate(event.id)
         amounts = calculate(lines, fee_rate.rate_bps, cashback_rate.rate_bps)
+        if amounts.total_cents > MAX_TRANSFER_CENTS:
+            # Pagamentos recusaria a perna da venda; o rollback devolve o estoque
+            self.session.rollback()
+            raise PurchaseAboveLimit()
 
         purchase = Purchase(
             id=uuid.uuid4(),
@@ -137,7 +145,7 @@ class PurchaseController(BaseController):
         result = self.payments.transfer(
             f"purchase:{purchase_id}",
             "balance",
-            [(leg.type, leg.source_account_id, leg.destination_account_id, leg.amount_cents) for leg in legs],
+            [(leg.source_account_id, leg.destination_account_id, leg.amount_cents) for leg in legs],
         )
 
         if result.outcome == "done":
@@ -240,7 +248,7 @@ class PurchaseController(BaseController):
 
         self.logger.info(f"reenvio da compra {purchase.id}, nada foi cobrado de novo")
         if purchase.status == PurchaseStatus.CANCELED.value:
-            raise CANCEL_ERRORS.get(purchase.cancel_code, UpstreamUnavailable)()
+            raise CANCEL_ERRORS.get(purchase.cancel_code or "", UpstreamUnavailable)()
         if purchase.status == PurchaseStatus.PENDING.value:
             return self.settle(purchase.id)
         return self._receipt(purchase)
@@ -255,12 +263,9 @@ class PurchaseController(BaseController):
 
     @staticmethod
     def _fee_transaction_id(legs, transactions):
-        # pelo type quando Pagamentos devolve; senão, pela ordem das pernas
-        for tx in transactions:
-            if tx.get("type") == TransactionType.FEE.value:
-                return tx.get("id")
+        # Pagamentos devolve as transações na ordem das pernas
         for leg, tx in zip(legs, transactions):
-            if leg.type == TransactionType.FEE.value:
+            if leg.name == "fee":
                 return tx.get("id")
         return None
 

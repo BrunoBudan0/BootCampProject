@@ -26,19 +26,23 @@ class PaymentsConnector(RestConnector):
             internal_token=PAYMENTS_API_TOKEN,
         )
 
-    def create_account(self, event_id, kind: str, idempotency_key: str, holder_id=None) -> str:
+    def create_account(
+        self, event_id, kind: str, idempotency_key: str, holder_id=None, holder_type: str | None = None
+    ) -> str:
         payload = {
             "event_id": str(event_id),
             "kind": kind,
             "idempotency_key": idempotency_key,
         }
-        # holder só em conta de usuário; fee e external não têm dono
-        if holder_id is not None:
+        # dono só em conta user: attendee na credencial, company no stand
+        if holder_id is not None and holder_type is not None:
             payload["holder_id"] = str(holder_id)
+            payload["holder_type"] = holder_type
         response = self._send("/internal/accounts", "POST", payload)
 
         # 201 = criou, 200 = já existia com essa chave
         if response.status not in (200, 201) or not response.json or "id" not in response.json:
+            # 409 QIT002036 aqui quer dizer chave fora do padrão acct:{evento}:{dono}
             self.logger.error(f"create_account inesperado: {response.status} {response.json}")
             raise UpstreamUnavailable()
 
@@ -50,12 +54,11 @@ class PaymentsConnector(RestConnector):
             "payment_method": payment_method,
             "transfers": [
                 {
-                    "type": transaction_type,
                     "source_account_id": str(source),
                     "destination_account_id": str(destination),
                     "amount_cents": amount,
                 }
-                for transaction_type, source, destination, amount in legs
+                for source, destination, amount in legs
             ],
         }
         return self._money("/internal/transactions", payload)
