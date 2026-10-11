@@ -1,0 +1,9 @@
+{
+  "title": "PutInternalAccountBlock",
+  "type": "object",
+  "properties": {
+    "blocked": { "type": "boolean" }
+  },
+  "required": ["blocked"],
+  "additionalProperties": false
+}

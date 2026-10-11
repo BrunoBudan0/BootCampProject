@@ -62,3 +62,43 @@ def is_valid_cpf(document_number: str) -> bool:
             return False
 
     return True
+
+
+CNPJ_LENGTH = 14
+
+CNPJ_FIRST_CHECK_DIGIT_WEIGHTS = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+CNPJ_SECOND_CHECK_DIGIT_WEIGHTS = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+
+
+def is_valid_cnpj(document_number: str) -> bool:
+    digits = [int(character) for character in document_number if character.isdigit()]
+
+    if len(digits) != CNPJ_LENGTH:
+        return False
+
+    if len(set(digits)) == 1:
+        return False
+
+    for weights in (CNPJ_FIRST_CHECK_DIGIT_WEIGHTS, CNPJ_SECOND_CHECK_DIGIT_WEIGHTS):
+        checked_position = len(weights)
+        total = sum(digit * weight for digit, weight in zip(digits, weights))
+        remainder = total % 11
+        expected_digit = 0 if remainder < 2 else 11 - remainder
+
+        if digits[checked_position] != expected_digit:
+            return False
+
+    return True
+
+
+def is_valid_cpf_or_cnpj(document_number: str) -> bool:
+    return is_valid_cpf(document_number) or is_valid_cnpj(document_number)
+
+
+def document_kind(document_number: str) -> str:
+    digit_count = sum(1 for character in document_number if character.isdigit())
+
+    if digit_count == CPF_LENGTH:
+        return "CPF"
+
+    return "CNPJ"

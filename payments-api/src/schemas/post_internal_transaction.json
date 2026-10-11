@@ -1,0 +1,25 @@
+{
+  "title": "PostInternalTransaction",
+  "type": "object",
+  "properties": {
+    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "payment_method": { "enum": ["balance", "card", "pix", "cash"] },
+    "transfers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_account_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+          "destination_account_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+          "amount_cents": { "type": "integer", "maximum": 10000000 }
+        },
+        "required": ["source_account_id", "destination_account_id", "amount_cents"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["idempotency_key", "payment_method", "transfers"],
+  "additionalProperties": false
+}

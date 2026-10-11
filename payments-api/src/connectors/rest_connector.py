@@ -46,9 +46,10 @@ class RestConnector(metaclass=ABCMeta):
         # Repare na simetria com src/middlewares/internal_token.py —
         # lá a gente confere o token de quem chega; aqui a gente manda
         # o token pra quem vamos chamar.
-        headers["INTERNAL-TOKEN"] = self.internal_token
+        if self.internal_token is not None:
+            headers["INTERNAL-TOKEN"] = self.internal_token
 
-        url = f"{self.base_url}{endpoint}"
+        url =f"{self.base_url}{endpoint}"
 
         self.logger.info(f"OUTGOING REQUEST {method} {url}")
         started_at = time.perf_counter()
