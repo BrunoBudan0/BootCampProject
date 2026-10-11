@@ -13,8 +13,15 @@ nunca muda.
 Parâmetros: limit (1 a 100, padrão 10), page (padrão 0), date_from,
             date_to (data, ou data e hora ISO). Data sem hora é o dia em
             America/Sao_Paulo, e date_to só com a data inclui o dia
-            inteiro. date_from depois de date_to é 400. Qualquer outro
-            nome é 400.
+            inteiro. Data e hora sem fuso também são de São Paulo, e
+            date_to com hora inclui aquele instante. date_from depois de
+            date_to é 400. Qualquer outro nome é 400.
+
+O que um teste black-box consegue provar sobre datas: a API decide a
+hora da transação, e não o teste. Por isso os testes de "data sem hora"
+provam que o próprio dia entra e o anterior não; o fuso de São Paulo é
+provado com data e hora sem fuso, a partir do settled_at que a própria
+API devolveu.
 Linha:      {transaction_id, payment_method, status, amount_cents,
              balance_after_cents, created_at, settled_at}
             amount_cents tem SINAL: positivo entrou, negativo saiu.
@@ -26,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from tests.utils import mockserver
+from tests.utils.clock import SAO_PAULO_OFFSET, today_in_sao_paulo
 from tests.utils.mockserver import PIX_CHARGES, pix_charge_answer
 from tests.utils.payments import (
     Event,
@@ -36,15 +44,21 @@ from tests.utils.payments import (
     pix_webhook,
     recharge,
     reverse,
+    setup_ok,
     statement,
     transfer,
 )
 
-SAO_PAULO_OFFSET = timezone(timedelta(hours=-3))
+
+def settled_at_of_the_only_line(account) -> datetime:
+    lines = setup_ok(statement(account))["data"]
+    assert len(lines) == 1, f"A PREPARAÇÃO esperava uma linha no extrato, veio {lines}"
+
+    return datetime.fromisoformat(lines[0]["settled_at"])
 
 
-def today_in_sao_paulo():
-    return datetime.now(SAO_PAULO_OFFSET).date()
+def on_a_sao_paulo_clock_without_offset(moment: datetime) -> str:
+    return moment.astimezone(SAO_PAULO_OFFSET).replace(tzinfo=None).isoformat()
 
 
 @pytest.fixture
@@ -59,7 +73,7 @@ class TestStatement:
     def test_each_line_carries_the_balance_after_it(self):
         event = Event()
         account = event.user_account(balance_cents=5000)
-        move([(account, event.user_account(), 1500)])
+        setup_ok(move([(account, event.user_account(), 1500)]))
 
         response = statement(account)
 
@@ -76,8 +90,8 @@ class TestStatement:
         account = event.user_account(balance_cents=5000)
         stand = event.stand_account()
         key = new_key("purchase")
-        move([(account, stand, 4000)], idempotency_key=key)
-        reverse(key)
+        setup_ok(move([(account, stand, 4000)], idempotency_key=key))
+        setup_ok(reverse(key))
 
         lines = statement(account).json()["data"]
 
@@ -89,8 +103,8 @@ class TestStatement:
         event = Event()
         account = event.user_account(balance_cents=3000)
         receiver = event.user_account()
-        move([(account, receiver, 1000)])
-        move([(account, receiver, 1000)])
+        setup_ok(move([(account, receiver, 1000)]))
+        setup_ok(move([(account, receiver, 1000)]))
 
         first = statement(account, limit=2, page=0).json()
         second = statement(account, limit=2, page=1).json()
@@ -116,9 +130,9 @@ class TestStatement:
     def test_a_pix_paid_late_does_not_rewrite_past_lines(self, pix_provider):
         event = Event()
         account = event.user_account(balance_cents=5000)
-        pix = recharge(account, "pix", 1000).json()
-        transfer(account, event.user_account(), 5000)
-        pix_webhook(pix["id"], "paid", 1000)
+        pix = setup_ok(recharge(account, "pix", 1000))
+        setup_ok(transfer(account, event.user_account(), 5000))
+        setup_ok(pix_webhook(pix["id"], "paid", 1000))
 
         lines = statement(account).json()["data"]
 
@@ -127,19 +141,45 @@ class TestStatement:
         assert lines[0]["transaction_id"] == pix["id"]
         assert datetime.fromisoformat(lines[0]["settled_at"]) > datetime.fromisoformat(lines[1]["settled_at"])
 
-    def test_date_to_with_only_the_date_includes_the_whole_day(self):
+    def test_date_to_with_only_the_date_includes_that_day(self):
         account = Event().user_account(balance_cents=1000)
 
         response = statement(account, date_to=today_in_sao_paulo().isoformat())
 
         assert len(response.json()["data"]) == 1
 
-    def test_date_from_with_only_the_date_starts_at_midnight_in_sao_paulo(self):
+    def test_date_from_with_only_the_date_includes_that_day(self):
         account = Event().user_account(balance_cents=1000)
 
         response = statement(account, date_from=today_in_sao_paulo().isoformat())
 
         assert len(response.json()["data"]) == 1
+
+    def test_date_and_time_without_offset_are_read_in_sao_paulo(self):
+        """Lida em UTC, a mesma hora de relógio cairia três horas antes, e o
+        filtro "a partir de um minuto depois" incluiria a linha."""
+        account = Event().user_account(balance_cents=1000)
+        settled_at = settled_at_of_the_only_line(account)
+
+        from_a_minute_before = statement(
+            account, date_from=on_a_sao_paulo_clock_without_offset(settled_at - timedelta(minutes=1))
+        )
+        from_a_minute_after = statement(
+            account, date_from=on_a_sao_paulo_clock_without_offset(settled_at + timedelta(minutes=1))
+        )
+
+        assert len(from_a_minute_before.json()["data"]) == 1
+        assert from_a_minute_after.json()["data"] == []
+
+    def test_date_to_with_date_and_time_includes_that_instant(self):
+        account = Event().user_account(balance_cents=1000)
+        settled_at = settled_at_of_the_only_line(account)
+
+        up_to_that_instant = statement(account, date_to=settled_at.isoformat())
+        up_to_just_before = statement(account, date_to=(settled_at - timedelta(microseconds=1)).isoformat())
+
+        assert len(up_to_that_instant.json()["data"]) == 1
+        assert up_to_just_before.json()["data"] == []
 
     def test_a_day_that_already_ended_leaves_today_out(self):
         account = Event().user_account(balance_cents=1000)

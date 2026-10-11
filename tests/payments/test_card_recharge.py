@@ -16,7 +16,9 @@ O reenvio com a mesma chave devolve a transação como ela está (200), e o
 app lê o status. Recarga recusada não se repete com a mesma chave.
 
 Aqui o provedor é o Mockserver: cada teste combina o que ele responde e,
-no fim, pergunta o que ele recebeu.
+no fim, pergunta o que ele recebeu. O Mockserver responde com o PRIMEIRO
+roteiro que casa com o pedido; para trocar a resposta no meio de um
+teste, é preciso limpar o roteiro antes (reset).
 
 Corpo:     account_id, payment_method "card", amount_cents (até 10000000),
            card_token, idempotency_key (UUID)
@@ -25,10 +27,16 @@ Respostas: 201 a transação · 200 replay · 400 QIT000001 · 404 QIT002020
            · 409 QIT002037 o evento não tem a conta external
            · 422 QIT002028 valor <= 0 · 422 QIT002033 cartão recusado
            · 502 QIT002031 provedor fora ou sem resposta
+
+Depois do 502, o desfecho depende de o pedido ter saído ou não: com
+erro 5xx, resposta sem JSON ou conexão que nem chegou a abrir, a recarga
+vira canceled; com o pedido já entregue (prazo esgotado, conexão
+derrubada no meio), ela fica pending e nasce o log crítico. A conexão
+recusada não tem teste black-box: o endereço do provedor é fixo no
+compose, e derrubar o Mockserver no meio da suíte quebraria os outros.
 """
 
 import threading
-import time
 
 import pytest
 
@@ -45,6 +53,7 @@ from tests.utils.payments import (
     fire_together,
     new_uuid,
     recharge,
+    setup_ok,
 )
 from tests.utils.services import payments
 
@@ -86,6 +95,15 @@ class TestCardRecharge:
         assert event.balance_of(event.external) == -5000
         assert provider_was_called(1, card_token="tok-approved-1", amount_cents=5000)
 
+    def test_amount_at_the_ceiling_is_accepted(self):
+        mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED)
+        account = Event().user_account()
+
+        response = recharge_by_card(account, MAXIMUM_AMOUNT_CENTS)
+
+        assert response.status_code == 201
+        assert balance(account) == MAXIMUM_AMOUNT_CENTS
+
     def test_same_key_does_not_charge_the_card_twice(self):
         mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED)
         account = Event().user_account()
@@ -118,15 +136,19 @@ class TestCardRecharge:
         assert provider_was_called(1, card_token="tok-double-click")
 
     def test_card_approved_while_the_account_was_blocked_still_credits(self):
-        """A pessoa já foi cobrada quando o bloqueio chegou: o dinheiro é dela."""
+        """A pessoa já foi cobrada quando o bloqueio chegou: o dinheiro é dela.
+
+        O bloqueio só é mandado depois que o pedido chegou ao provedor, ou
+        seja, depois que a API já conferiu que a conta estava livre.
+        """
         mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED, delay_seconds=2)
         account = Event().user_account()
         responses = []
         recharging = threading.Thread(target=lambda: responses.append(recharge_by_card(account, 5000)))
 
         recharging.start()
-        time.sleep(1)
-        block(account)
+        mockserver.wait_until_received("POST", CARD_AUTHORIZATIONS, 1)
+        setup_ok(block(account))
         recharging.join()
 
         assert responses[0].status_code == 201, responses[0].text
@@ -143,10 +165,12 @@ class TestCardRechargeFailures:
         assert balance(account) == 0
 
     def test_declined_recharge_is_not_retried_with_the_same_key(self):
+        """Nem quando o provedor passaria a aprovar: a chave já tem desfecho."""
         mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, DECLINED)
         account = Event().user_account()
         key = new_uuid()
-        recharge_by_card(account, 5000, idempotency_key=key)
+        assert_error(recharge_by_card(account, 5000, idempotency_key=key), 422, "QIT002033")
+        mockserver.reset()
         mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED)
 
         response = recharge_by_card(account, 5000, idempotency_key=key)
@@ -154,14 +178,21 @@ class TestCardRechargeFailures:
         assert response.status_code == 200
         assert response.json()["status"] == "canceled"
         assert balance(account) == 0
-        assert provider_was_called(1)
+        assert provider_was_called(0)
 
-    def test_provider_error_is_a_bad_gateway(self):
+    def test_provider_error_is_a_bad_gateway_and_cancels_the_recharge(self):
         mockserver.expect("POST", CARD_AUTHORIZATIONS, 500, {"error": "boom"})
         account = Event().user_account()
+        key = new_uuid()
 
-        assert_error(recharge_by_card(account, 5000), 502, "QIT002031")
+        first = recharge_by_card(account, 5000, idempotency_key=key)
+        resent = recharge_by_card(account, 5000, idempotency_key=key)
+
+        assert_error(first, 502, "QIT002031")
+        assert resent.status_code == 200
+        assert resent.json()["status"] == "canceled"
         assert balance(account) == 0
+        assert provider_was_called(1)
 
     def test_provider_without_json_is_a_bad_gateway(self):
         mockserver.expect("POST", CARD_AUTHORIZATIONS, 200)
@@ -170,27 +201,37 @@ class TestCardRechargeFailures:
         assert_error(recharge_by_card(account, 5000), 502, "QIT002031")
         assert balance(account) == 0
 
-    def test_provider_timeout_is_a_bad_gateway_and_credits_nothing(self):
+    def test_provider_timeout_leaves_the_recharge_pending_and_never_charges_again(self):
         """O provedor demora mais que o prazo (3 s). A pessoa PODE ter sido
-        cobrada — é o log crítico CARD_OUTCOME_UNKNOWN —, mas nenhum saldo
-        entra sem a aprovação."""
-        mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED, delay_seconds=6)
-        account = Event().user_account()
-
-        assert_error(recharge_by_card(account, 5000), 502, "QIT002031")
-        assert balance(account) == 0
-
-    def test_resend_after_a_timeout_returns_the_pending_recharge(self):
-        """Sem saber se a pessoa foi cobrada, o sistema não cobra de novo."""
+        cobrada — é o log crítico CARD_OUTCOME_UNKNOWN —, então nenhum saldo
+        entra sem a aprovação, e o reenvio com a mesma chave não cobra de novo."""
         mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED, delay_seconds=6)
         account = Event().user_account()
         key = new_uuid()
-        recharge_by_card(account, 5000, idempotency_key=key)
 
-        response = recharge_by_card(account, 5000, idempotency_key=key)
+        first = recharge_by_card(account, 5000, idempotency_key=key)
+        resent = recharge_by_card(account, 5000, idempotency_key=key)
 
-        assert response.status_code == 200
-        assert response.json()["status"] == "pending"
+        assert_error(first, 502, "QIT002031")
+        assert resent.status_code == 200
+        assert resent.json()["status"] == "pending"
+        assert balance(account) == 0
+        assert provider_was_called(1)
+
+
+    def test_connection_dropped_after_the_request_left_leaves_the_recharge_pending(self):
+        """O provedor recebeu o pedido e a resposta se perdeu: a pessoa pode
+        ter sido cobrada, então a recarga não é cancelada."""
+        mockserver.expect_dropped_connection("POST", CARD_AUTHORIZATIONS)
+        account = Event().user_account()
+        key = new_uuid()
+
+        first = recharge_by_card(account, 5000, idempotency_key=key)
+        resent = recharge_by_card(account, 5000, idempotency_key=key)
+
+        assert_error(first, 502, "QIT002031")
+        assert resent.status_code == 200
+        assert resent.json()["status"] == "pending"
         assert balance(account) == 0
         assert provider_was_called(1)
 
@@ -204,7 +245,7 @@ class TestCardRechargeRefusals:
 
     def test_blocked_account(self):
         account = Event().user_account()
-        block(account)
+        setup_ok(block(account))
 
         assert_error(recharge_by_card(account, 5000), 409, "QIT002022")
         assert provider_was_called(0)
@@ -215,18 +256,16 @@ class TestCardRechargeRefusals:
         assert_error(recharge_by_card(account, 0), 422, "QIT002028")
         assert provider_was_called(0)
 
-    def test_amount_above_the_ceiling(self):
+    @pytest.mark.parametrize(
+        "amount_cents",
+        [MAXIMUM_AMOUNT_CENTS + 1, 10**19],
+        ids=["one_cent_above_the_ceiling", "beyond_what_the_database_holds"],
+    )
+    def test_amount_above_the_ceiling_never_reaches_the_provider(self, amount_cents):
         mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED)
         account = Event().user_account()
 
-        assert_error(recharge_by_card(account, MAXIMUM_AMOUNT_CENTS + 1), 400, "QIT000001")
-        assert provider_was_called(0)
-
-    def test_amount_far_above_the_ceiling_is_not_a_server_error(self):
-        mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED)
-        account = Event().user_account()
-
-        assert_error(recharge_by_card(account, 10**19), 400, "QIT000001")
+        assert_error(recharge_by_card(account, amount_cents), 400, "QIT000001")
         assert provider_was_called(0)
 
     def test_event_without_external_account(self):
@@ -262,7 +301,7 @@ class TestCardRechargeRefusals:
         mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED)
         account = Event().user_account()
         key = new_uuid()
-        recharge_by_card(account, 5000, idempotency_key=key)
+        setup_ok(recharge_by_card(account, 5000, idempotency_key=key))
 
         assert_error(recharge_by_card(account, 7000, idempotency_key=key), 409, "QIT002025")
         assert balance(account) == 5000

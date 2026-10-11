@@ -16,7 +16,17 @@ A regra que nenhum teste daqui pode ver quebrar: conta de usuário nunca
 fica negativa, e numa recusa NADA se move.
 """
 
-from tests.utils.payments import MAXIMUM_AMOUNT_CENTS, Event, assert_error, balance, is_uuid, move, new_key, new_uuid
+from tests.utils.payments import (
+    MAXIMUM_AMOUNT_CENTS,
+    Event,
+    assert_error,
+    balance,
+    is_uuid,
+    move,
+    new_key,
+    new_uuid,
+    setup_ok,
+)
 from tests.utils.services import payments
 
 
@@ -40,6 +50,15 @@ class TestMovesMoney:
         assert transaction["status"] == "settled"
         assert transaction["reverses_transaction_id"] is None
         assert balance(account) == 5000
+
+    def test_amount_at_the_ceiling_is_accepted(self):
+        event = Event()
+        account = event.user_account()
+
+        response = move([(event.external, account, MAXIMUM_AMOUNT_CENTS)], payment_method="cash")
+
+        assert response.status_code == 201
+        assert balance(account) == MAXIMUM_AMOUNT_CENTS
 
     def test_external_account_goes_negative_on_purpose(self):
         """O módulo da external é quanto dinheiro entrou de fora."""
@@ -68,7 +87,7 @@ class TestMovesMoney:
         event = Event()
         buyer = event.user_account(balance_cents=5000)
         stand = event.stand_account()
-        event.purchase(buyer, stand)
+        setup_ok(event.purchase(buyer, stand)[1])
 
         reconciliation = event.reconciliation()
 
@@ -117,6 +136,7 @@ class TestRefusesWithoutMovingAnything:
         account = Event().user_account(balance_cents=1000)
 
         assert_error(move([(account, account, 100)]), 422, "QIT002029")
+        assert balance(account) == 1000
 
     def test_accounts_of_different_events(self):
         payer = Event().user_account(balance_cents=1000)
@@ -133,6 +153,7 @@ class TestRefusesWithoutMovingAnything:
         account = event.user_account(balance_cents=1000)
 
         assert_error(move([(account, event.user_account(), 0)]), 422, "QIT002028")
+        assert balance(account) == 1000
 
     def test_negative_amount(self):
         """Valor negativo seria uma transferência ao contrário, disfarçada."""
@@ -159,6 +180,7 @@ class TestRefusesWithoutMovingAnything:
         account = event.user_account(balance_cents=1000)
 
         assert_error(move([(account, event.user_account(), 10.5)]), 400, "QIT000001")
+        assert balance(account) == 1000
 
     def test_unknown_payment_method(self):
         event = Event()
@@ -167,6 +189,7 @@ class TestRefusesWithoutMovingAnything:
         response = move([(account, event.user_account(), 100)], payment_method="boleto")
 
         assert_error(response, 400, "QIT000001")
+        assert balance(account) == 1000
 
     def test_empty_transfer_list(self):
         response = payments.send(
@@ -209,7 +232,7 @@ class TestIdempotency:
         buyer = event.user_account(balance_cents=5000)
         stand = event.stand_account()
         key = new_key("purchase")
-        move([(buyer, stand, 3000)], idempotency_key=key)
+        setup_ok(move([(buyer, stand, 3000)], idempotency_key=key))
 
         response = move([(buyer, stand, 1000)], idempotency_key=key)
 
@@ -239,7 +262,7 @@ class TestIdempotency:
         key = new_key("purchase")
 
         refused = move([(buyer, stand, 3000)], idempotency_key=key)
-        move([(event.external, buyer, 2000)], payment_method="cash")
+        setup_ok(move([(event.external, buyer, 2000)], payment_method="cash"))
         retried = move([(buyer, stand, 3000)], idempotency_key=key)
 
         assert_error(refused, 409, "QIT002021")

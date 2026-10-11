@@ -6,6 +6,7 @@ from datetime import datetime
 import requests
 from jsonschema import ValidationError, validate
 from sqlalchemy.exc import IntegrityError
+from urllib3.exceptions import NewConnectionError
 
 from connectors import CardProviderConnector, PixProviderConnector
 from constants import PIX_WEBHOOK_SECRET
@@ -70,11 +71,12 @@ class RechargeController(MoneyMovingController):
 
     def handle_pix_webhook(self, transaction_id: str, raw_body: bytes, signature) -> None:
         if not pix_signature_matches(raw_body, signature):
-            self._refuse_pix_notice(transaction_id, "the signature does not match the body")
+            self.logger.warning(f"Pix notice for {transaction_id} refused: the signature does not match the body")
+            raise InvalidPixSignature()
 
         notice = parse_pix_notice(raw_body)
         if not notice_belongs_to(notice, transaction_id):
-            self._refuse_pix_notice(transaction_id, "the signed notice belongs to another charge")
+            self._refuse_signed_notice_of_another_charge(transaction_id)
 
         transaction = self._find_pix_transaction(transaction_id)
 
@@ -105,19 +107,19 @@ class RechargeController(MoneyMovingController):
             provider_response = CardProviderConnector().authorize(
                 card_token=payload["card_token"], amount_cents=amount_cents, reference=idempotency_key
             )
-        except requests.exceptions.ReadTimeout:
-            self.critical_log_repository.record(
-                CriticalLogPayment.CARD_OUTCOME_UNKNOWN,
-                route="/recharges",
-                error_code=ProviderUnavailable.code,
-                user_id=self.context.caller_id,
-                transaction=pending_recharge,
-                idempotency_key=idempotency_key,
-                amount_cents=amount_cents,
-            )
-            raise ProviderUnavailable("card")
-        except requests.exceptions.RequestException:
-            self._cancel_pending_recharge(pending_recharge)
+        except requests.exceptions.RequestException as provider_error:
+            if provider_request_never_left(provider_error):
+                self._cancel_pending_recharge(pending_recharge)
+            else:
+                self.critical_log_repository.record(
+                    CriticalLogPayment.CARD_OUTCOME_UNKNOWN,
+                    route="/recharges",
+                    error_code=ProviderUnavailable.code,
+                    user_id=self.context.caller_id,
+                    transaction=pending_recharge,
+                    idempotency_key=idempotency_key,
+                    amount_cents=amount_cents,
+                )
             raise ProviderUnavailable("card")
 
         card_status = provider_response.json.get("status") if isinstance(provider_response.json, dict) else None
@@ -214,14 +216,14 @@ class RechargeController(MoneyMovingController):
 
         return TransactionDTO.obj_to_dict(recorded)
 
-    def _refuse_pix_notice(self, transaction_id: str, reason: str) -> None:
+    def _refuse_signed_notice_of_another_charge(self, transaction_id: str) -> None:
         invalid_signature = InvalidPixSignature()
         self.critical_log_repository.record(
             CriticalLogPayment.PIX_INVALID_SIGNATURE,
             route=f"/webhooks/pix/{transaction_id}",
             http_status=invalid_signature.http_status,
             error_code=invalid_signature.code,
-            description=reason,
+            description="a validly signed notice of another charge was sent to this charge",
         )
         raise invalid_signature
 
@@ -296,6 +298,18 @@ def parse_pix_notice(raw_body: bytes) -> dict:
 def notice_belongs_to(notice: dict, transaction_id: str) -> bool:
     notice_reference = parse_uuid_or_none(notice["reference"])
     return notice_reference is not None and notice_reference == parse_uuid_or_none(transaction_id)
+
+
+def provider_request_never_left(provider_error: requests.exceptions.RequestException) -> bool:
+    if isinstance(provider_error, requests.exceptions.ConnectTimeout):
+        return True
+
+    if not isinstance(provider_error, requests.exceptions.ConnectionError):
+        return False
+
+    wrapped_error = provider_error.args[0] if provider_error.args else None
+    connection_failure = getattr(wrapped_error, "reason", wrapped_error)
+    return isinstance(connection_failure, NewConnectionError)
 
 
 def parse_provider_datetime(raw_value):

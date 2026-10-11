@@ -2,9 +2,7 @@ import pytest
 
 from tests.utils.payments import assert_error, new_uuid
 from tests.utils.services import users
-from tests.utils.users import ATTENDEE, COMPANY, ORGANIZER, me, registered
-
-PASSWORD_FIELDS = {"password", "password_hash"}
+from tests.utils.users import ATTENDEE, COMPANY, ORGANIZER, PRIVATE_FIELDS, me, registered
 
 
 @pytest.mark.parametrize("user_type", [ATTENDEE, ORGANIZER, COMPANY])
@@ -18,7 +16,7 @@ class TestMeOfEveryUserType:
         assert response.json()["id"] == user["id"]
         assert response.json()["user_type"] == user_type
         assert response.json()["email"] == user["email"]
-        assert PASSWORD_FIELDS.isdisjoint(response.json())
+        assert PRIVATE_FIELDS.isdisjoint(response.json())
 
 
 class TestMeRefusals:
@@ -34,3 +32,8 @@ class TestMeRefusals:
         attendee = registered(ATTENDEE)
 
         assert_error(me(attendee["id"], ORGANIZER), 401, "QIT002002")
+
+    def test_unknown_caller_type_is_not_authenticated(self):
+        attendee = registered(ATTENDEE)
+
+        assert_error(me(attendee["id"], "admin"), 401, "QIT002002")

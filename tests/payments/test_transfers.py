@@ -10,8 +10,10 @@ Corpo:     source_account_id, destination_account_id, amount_cents (até
 Respostas: 201 a transação (payment_method balance) · 200 replay
            · 400 QIT000001 · 403 QIT002004 a origem não é uma credencial
            · 404 QIT002020 a origem não é sua · 409 QIT002021 saldo
-           · 409 QIT002022 bloqueada · 409 QIT002025 chave com outro valor
-           · 422 QIT002027 o destino não aceita transferência
+           · 409 QIT002022 a origem está bloqueada
+           · 409 QIT002025 chave com outro valor
+           · 422 QIT002027 o destino não aceita transferência (stand, fee,
+             external ou credencial bloqueada)
            · 422 QIT002028 valor <= 0 · 422 QIT002029 mesma conta
            · 422 QIT002030 eventos diferentes
 """
@@ -23,6 +25,7 @@ from tests.utils.payments import (
     balance,
     block,
     new_uuid,
+    setup_ok,
     transfer,
 )
 
@@ -96,23 +99,28 @@ class TestTransferRefusals:
     def test_blocked_source(self):
         event = Event()
         source = event.user_account(balance_cents=5000)
-        block(source)
+        setup_ok(block(source))
 
         assert_error(transfer(source, event.user_account(), 1500), 409, "QIT002022")
+        assert balance(source) == 5000
 
-    def test_blocked_destination(self):
+    def test_blocked_destination_looks_like_any_destination_that_refuses(self):
+        """Quem conhece o id de uma credencial não descobre que ela está
+        bloqueada (crachá perdido): a recusa é a mesma do stand."""
         event = Event()
         source = event.user_account(balance_cents=5000)
         destination = event.user_account()
-        block(destination)
+        setup_ok(block(destination))
 
-        assert_error(transfer(source, destination, 1500), 409, "QIT002022")
+        assert_error(transfer(source, destination, 1500), 422, "QIT002027")
         assert balance(source) == 5000
+        assert balance(destination) == 0
 
     def test_same_account(self):
         source = Event().user_account(balance_cents=5000)
 
         assert_error(transfer(source, source, 1500), 422, "QIT002029")
+        assert balance(source) == 5000
 
     def test_accounts_of_different_events(self):
         source = Event().user_account(balance_cents=5000)
@@ -126,6 +134,7 @@ class TestTransferRefusals:
         source = event.user_account(balance_cents=5000)
 
         assert_error(transfer(source, event.user_account(), 0), 422, "QIT002028")
+        assert balance(source) == 5000
 
     def test_amount_above_the_ceiling(self):
         event = Event()
@@ -141,7 +150,7 @@ class TestTransferRefusals:
         source = event.user_account(balance_cents=5000)
         destination = event.user_account()
         key = new_uuid()
-        transfer(source, destination, 1500, idempotency_key=key)
+        setup_ok(transfer(source, destination, 1500, idempotency_key=key))
 
         response = transfer(source, destination, 2000, idempotency_key=key)
 
@@ -198,7 +207,7 @@ class TestOnlyAttendeesTransferToAttendees:
         event = Event()
         stand = event.stand_account()
         buyer = event.user_account(balance_cents=5000)
-        event.purchase(buyer, stand)
+        setup_ok(event.purchase(buyer, stand)[1])
 
         response = transfer(stand, event.user_account(), 1000)
 

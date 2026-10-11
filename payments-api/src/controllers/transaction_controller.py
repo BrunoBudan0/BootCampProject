@@ -76,7 +76,7 @@ class TransactionController(MoneyMovingController):
         destination_account = self.account_controller.find_account_or_fail(payload["destination_account_id"])
         resolved_transfers = [(source_account, destination_account, amount_cents)]
         self.refuse_invalid_transfers(resolved_transfers)
-        if destination_account.holder_type != Account.ATTENDEE_HOLDER:
+        if destination_account.holder_type != Account.ATTENDEE_HOLDER or destination_account.blocked:
             raise DestinationRefusesTransfers()
 
         try:

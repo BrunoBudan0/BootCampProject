@@ -27,6 +27,7 @@ from tests.utils.payments import (
     new_key,
     new_uuid,
     reverse,
+    setup_ok,
 )
 from tests.utils.services import payments
 
@@ -60,7 +61,7 @@ class TestReversal:
         event = Event()
         _, _, key, originals = bought(event)
 
-        reversals = reverse(key).json()["transactions"]
+        reversals = setup_ok(reverse(key))["transactions"]
 
         by_id = {original["id"]: original for original in originals}
         assert len(reversals) == len(originals)
@@ -77,7 +78,7 @@ class TestReversal:
         event = Event()
         buyer, stand, key, _ = bought(event)
 
-        reversals = reverse(key).json()["transactions"]
+        reversals = setup_ok(reverse(key))["transactions"]
 
         sources = [reversal["source_account_id"] for reversal in reversals]
         assert sources == [event.fee["id"], stand["id"], buyer["id"]]
@@ -86,7 +87,7 @@ class TestReversal:
         event = Event()
         buyer, _, key, originals = bought(event)
 
-        reverse(key)
+        setup_ok(reverse(key))
 
         response = get_transaction(originals[0]["id"], caller=buyer["holder_id"])
         assert response.status_code == 200
@@ -101,7 +102,7 @@ class TestReversal:
         event = Event()
         buyer, stand, key, _ = bought(event, balance_cents=4000)
         friend = event.user_account()
-        move([(buyer, friend, 80)])
+        setup_ok(move([(buyer, friend, 80)]))
         assert balance(buyer) == 0
 
         response = reverse(key)
@@ -127,7 +128,19 @@ class TestReversal:
     def test_refund_reaches_a_blocked_buyer(self):
         event = Event()
         buyer, stand, key, _ = bought(event)
-        block(buyer)
+        setup_ok(block(buyer))
+
+        response = reverse(key)
+
+        assert response.status_code == 201
+        assert balance(buyer) == 5000
+        assert balance(stand) == 0
+
+    def test_refund_debits_a_blocked_stand(self):
+        """O bloqueio do stand não prende o dinheiro de quem tem direito à devolução."""
+        event = Event()
+        buyer, stand, key, _ = bought(event)
+        setup_ok(block(stand))
 
         response = reverse(key)
 
@@ -171,7 +184,7 @@ class TestReversalRefusals:
     def test_cannot_reverse_twice(self):
         event = Event()
         buyer, _, key, _ = bought(event)
-        reverse(key)
+        setup_ok(reverse(key))
 
         response = reverse(key)
 
@@ -182,7 +195,7 @@ class TestReversalRefusals:
         event = Event()
         buyer, stand, key, originals = bought(event)
         elsewhere = event.user_account()
-        move([(stand, elsewhere, 3800)])
+        setup_ok(move([(stand, elsewhere, 3800)]))
 
         response = reverse(key)
 

@@ -5,6 +5,12 @@ from fastapi import FastAPI, Request
 from constants import BYPASS_ENDPOINTS, INTERNAL_TOKEN
 from errors.base_error import ForbiddenNotInternal
 from errors.handlers import qi_exception_to_response
+from utils.logger import get_logger
+
+INTERNAL_ROUTES_PREFIX = "/internal/"
+INTERNAL_CALL_REJECTED = "INTERNAL_CALL_REJECTED"
+
+logger = get_logger(__name__)
 
 
 def internal_token_matches(received_token) -> bool:
@@ -31,6 +37,12 @@ def register_internal_token_middleware(application: FastAPI) -> None:
             return await call_next(request)
 
         if not internal_token_matches(request.headers.get("INTERNAL-TOKEN")):
-            return qi_exception_to_response(ForbiddenNotInternal())
+            refusal = ForbiddenNotInternal()
+            if request.url.path.startswith(INTERNAL_ROUTES_PREFIX):
+                logger.critical(
+                    f"{INTERNAL_CALL_REJECTED} route={request.url.path} "
+                    f"http_status={refusal.http_status} error_code={refusal.code}"
+                )
+            return qi_exception_to_response(refusal)
 
         return await call_next(request)

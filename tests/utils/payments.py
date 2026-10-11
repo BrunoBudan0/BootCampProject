@@ -121,11 +121,25 @@ def same_refusal(first, second) -> bool:
     return (a["code"], a["title"], a["translation"]) == (b["code"], b["title"], b["translation"])
 
 
-def _setup_ok(response, what: str) -> dict:
-    assert response.status_code in (200, 201), (
+SETUP_SUCCESS_STATUSES = (200, 201, 204)
+NO_CONTENT = 204
+
+
+def setup_ok(response, what: str = None):
+    """Confere um passo de PREPARAÇÃO e devolve o corpo da resposta.
+
+    Toda chamada que só monta o cenário passa por aqui. Sem isto, uma
+    preparação que falhou deixaria o teste quebrar mais adiante, numa
+    linha que acusa a regra errada.
+    """
+    what = what or f"{response.request.method} {response.request.path_url}"
+    assert response.status_code in SETUP_SUCCESS_STATUSES, (
         f"A PREPARAÇÃO do teste falhou em {what}: {response.status_code} {response.text}\n"
         "O que está quebrado é a rota usada para montar o cenário, não a regra deste teste."
     )
+
+    if response.status_code == NO_CONTENT:
+        return None
 
     return response.json()
 
@@ -158,7 +172,7 @@ def create_account(
 
     response = payments.send("POST", "/internal/accounts", json=payload)
 
-    return _setup_ok(response, f"POST /internal/accounts (kind={kind}, holder_type={holder_type})")
+    return setup_ok(response, f"POST /internal/accounts (kind={kind}, holder_type={holder_type})")
 
 
 def move(transfers: list, payment_method: str = "balance", idempotency_key: str = None):
@@ -215,7 +229,7 @@ def get_account(account: dict, caller: str = None):
 
 
 def balance(account: dict) -> int:
-    return _setup_ok(get_account(account), "GET /accounts/{id}")["balance_cents"]
+    return setup_ok(get_account(account), "GET /accounts/{id}")["balance_cents"]
 
 
 def get_transaction(transaction_id: str, caller: str):
@@ -305,7 +319,7 @@ class Event:
         account = create_account(self.id, holder_id=holder_id, holder_type=holder_type)
 
         if balance_cents > 0:
-            _setup_ok(
+            setup_ok(
                 move([(self.external, account, balance_cents)], payment_method="cash"),
                 "a recarga em dinheiro que dá saldo à conta",
             )
@@ -314,7 +328,7 @@ class Event:
 
     def reconciliation(self) -> dict:
         response = payments.send("GET", f"/internal/events/{self.id}/reconciliation")
-        return _setup_ok(response, "GET /internal/events/{id}/reconciliation")
+        return setup_ok(response, "GET /internal/events/{id}/reconciliation")
 
     def balance_of(self, account: dict) -> int:
         """O saldo de qualquer conta do evento, inclusive fee e external.

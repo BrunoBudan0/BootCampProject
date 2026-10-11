@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import os
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 
 HASH_SCHEME = "scrypt"
 SCRYPT_COST = 2**14
@@ -10,6 +11,9 @@ SCRYPT_PARALLELISM = 1
 SALT_BYTES = 16
 DERIVED_KEY_BYTES = 32
 FIELD_SEPARATOR = "$"
+SIMULTANEOUS_HASHES_LIMIT = 4
+
+hashing_threads = ThreadPoolExecutor(max_workers=SIMULTANEOUS_HASHES_LIMIT, thread_name_prefix="password-hashing")
 
 
 def hash_password(password: str) -> str:
@@ -36,14 +40,15 @@ def password_matches(password: str, stored_hash: str) -> bool:
 
 
 def derive_key(password: str, salt: bytes, cost: int, block_size: int, parallelism: int) -> bytes:
-    return hashlib.scrypt(
+    return hashing_threads.submit(
+        hashlib.scrypt,
         password.encode("utf-8"),
         salt=salt,
         n=cost,
         r=block_size,
         p=parallelism,
         dklen=DERIVED_KEY_BYTES,
-    )
+    ).result()
 
 
 PASSWORD_HASH_OF_NOBODY = hash_password(secrets.token_urlsafe(32))

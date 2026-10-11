@@ -5,51 +5,62 @@ from tests.utils.services import payments, users
 from tests.utils.users import (
     ATTENDEE,
     COMPANY,
+    MINIMUM_ATTENDEE_AGE,
     ORGANIZER,
     PAYLOAD_BUILDER_BY_USER_TYPE,
+    PRIVATE_FIELDS,
     attendee_payload,
     birth_date_for_age,
+    birth_date_one_day_short_of,
     company_payload,
+    me,
     new_cnpj,
     new_cpf,
     new_email,
     organizer_payload,
     register,
+    registered,
     with_wrong_check_digit,
 )
 
 ALL_USER_TYPES = [ATTENDEE, ORGANIZER, COMPANY]
-PASSWORD_FIELDS = {"password", "password_hash"}
 
 
 @pytest.mark.parametrize("user_type", ALL_USER_TYPES)
 class TestRegistrationOfEveryUserType:
-    def test_registers_and_returns_uuid_without_password(self, user_type):
+    def test_registers_and_returns_uuid_without_password_or_document(self, user_type):
         response = register(user_type, PAYLOAD_BUILDER_BY_USER_TYPE[user_type]())
 
         assert response.status_code == 201
         assert is_uuid(response.json()["id"])
-        assert PASSWORD_FIELDS.isdisjoint(response.json())
+        assert response.json()["user_type"] == user_type
+        assert PRIVATE_FIELDS.isdisjoint(response.json())
+
+    def test_email_is_kept_in_lowercase(self, user_type):
+        payload = PAYLOAD_BUILDER_BY_USER_TYPE[user_type](email=new_email().upper())
+
+        response = register(user_type, payload)
+
+        assert response.status_code == 201
+        assert response.json()["email"] == payload["email"].lower()
+        assert me(response.json()["id"], user_type).json()["email"] == payload["email"].lower()
 
     def test_same_document_twice_in_the_same_type_is_refused(self, user_type):
-        first = PAYLOAD_BUILDER_BY_USER_TYPE[user_type]()
-        register(user_type, first)
+        first = registered(user_type)
 
         second = PAYLOAD_BUILDER_BY_USER_TYPE[user_type](document=first["document"])
 
         assert_error(register(user_type, second), 409, "QIT002006")
 
     def test_same_email_twice_in_the_same_type_is_refused(self, user_type):
-        first = PAYLOAD_BUILDER_BY_USER_TYPE[user_type]()
-        register(user_type, first)
+        first = registered(user_type)
 
         second = PAYLOAD_BUILDER_BY_USER_TYPE[user_type](email=first["email"])
 
         assert_error(register(user_type, second), 409, "QIT002007")
 
     def test_email_is_compared_ignoring_case(self, user_type):
-        first = PAYLOAD_BUILDER_BY_USER_TYPE[user_type]()
-        register(user_type, first)
+        first = registered(user_type)
 
         second = PAYLOAD_BUILDER_BY_USER_TYPE[user_type](email=first["email"].upper())
 
@@ -63,6 +74,13 @@ class TestRegistrationOfEveryUserType:
 
     def test_short_password_is_refused(self, user_type):
         payload = PAYLOAD_BUILDER_BY_USER_TYPE[user_type](password="1234567")
+
+        assert_error(register(user_type, payload), 400, "QIT000001")
+
+    def test_email_outside_ascii_is_refused(self, user_type):
+        """Cada "İ" vira dois caracteres em minúscula: 211 viram 411, e a
+        coluna tem 255."""
+        payload = PAYLOAD_BUILDER_BY_USER_TYPE[user_type](email="İ" * 200 + "@evento.com")
 
         assert_error(register(user_type, payload), 400, "QIT000001")
 
@@ -131,8 +149,13 @@ class TestAttendeeRules:
 
         assert_error(register(ATTENDEE, payload), 422, "QIT002008")
 
-    def test_child_below_minimum_age_is_refused(self):
-        payload = attendee_payload(birth_date=birth_date_for_age(10))
+    def test_exactly_the_minimum_age_is_accepted(self):
+        payload = attendee_payload(birth_date=birth_date_for_age(MINIMUM_ATTENDEE_AGE))
+
+        assert register(ATTENDEE, payload).status_code == 201
+
+    def test_one_day_short_of_the_minimum_age_is_refused(self):
+        payload = attendee_payload(birth_date=birth_date_one_day_short_of(MINIMUM_ATTENDEE_AGE))
 
         assert_error(register(ATTENDEE, payload), 422, "QIT002008")
 
@@ -159,10 +182,22 @@ class TestOrganizerRules:
 
         assert_error(register(ORGANIZER, payload), 422, "QIT002005")
 
+    def test_cpf_with_all_digits_equal_is_refused(self):
+        """111.111.111-11 acerta os dígitos verificadores: só a regra própria o recusa."""
+        payload = organizer_payload(document="111.111.111-11")
+
+        assert_error(register(ORGANIZER, payload), 422, "QIT002005")
+
 
 class TestCompanyRules:
     def test_cnpj_with_wrong_check_digit_is_refused(self):
         payload = company_payload(document=with_wrong_check_digit(new_cnpj()))
+
+        assert_error(register(COMPANY, payload), 422, "QIT002005")
+
+    def test_cnpj_with_all_digits_equal_is_refused(self):
+        """00.000.000/0000-00 acerta os dígitos verificadores: só a regra própria o recusa."""
+        payload = company_payload(document="00.000.000/0000-00")
 
         assert_error(register(COMPANY, payload), 422, "QIT002005")
 

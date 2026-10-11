@@ -24,7 +24,7 @@ Webhook:   204 · 400 QIT000001 · 401 QIT002034 assinatura inválida ou de
 import pytest
 
 from tests.utils import mockserver
-from tests.utils.mockserver import PIX_CHARGES, PIX_COPY_PASTE, pix_charge_answer
+from tests.utils.mockserver import CARD_AUTHORIZATIONS, PIX_CHARGES, PIX_COPY_PASTE, pix_charge_answer
 from tests.utils.payments import (
     MAXIMUM_AMOUNT_CENTS,
     Event,
@@ -38,6 +38,7 @@ from tests.utils.payments import (
     pix_webhook,
     recharge,
     send_signed_pix_notice,
+    setup_ok,
     statement,
 )
 
@@ -120,14 +121,22 @@ class TestPixCharge:
         assert len({response.json()["id"] for response in responses}) == 1
         assert provider_was_called(1)
 
-    def test_provider_down_records_nothing(self):
+    def test_provider_down_cancels_the_charge_and_the_resend_says_so(self):
         mockserver.reset()
         mockserver.expect("POST", PIX_CHARGES, 500, {"error": "boom"})
         account = Event().user_account()
+        key = new_uuid()
 
-        assert_error(recharge_by_pix(account, 5000), 502, "QIT002031")
+        first = recharge_by_pix(account, 5000, idempotency_key=key)
+        resent = recharge_by_pix(account, 5000, idempotency_key=key)
+
+        assert_error(first, 502, "QIT002031")
+        assert resent.status_code == 200
+        assert resent.json()["status"] == "canceled"
+        assert resent.json()["pix_copy_paste"] is None
         assert statement(account).json()["data"] == []
         assert balance(account) == 0
+        assert provider_was_called(1)
 
 
 class TestPixChargeRefusals:
@@ -139,7 +148,7 @@ class TestPixChargeRefusals:
 
     def test_blocked_account(self):
         account = Event().user_account()
-        block(account)
+        setup_ok(block(account))
 
         assert_error(recharge_by_pix(account, 5000), 409, "QIT002022")
         assert provider_was_called(0)
@@ -169,7 +178,7 @@ class TestPixWebhook:
 
     def test_second_paid_notice_does_not_credit_twice(self):
         account, transaction = pending_pix(5000)
-        pix_webhook(transaction["id"], "paid", 5000)
+        setup_ok(pix_webhook(transaction["id"], "paid", 5000))
 
         response = pix_webhook(transaction["id"], "paid", 5000)
 
@@ -188,7 +197,7 @@ class TestPixWebhook:
     def test_paid_pix_credits_a_blocked_account(self):
         """O dinheiro já saiu do banco da pessoa: o bloqueio impede gastar, não receber o que ela pagou."""
         account, transaction = pending_pix(5000)
-        block(account)
+        setup_ok(block(account))
 
         response = pix_webhook(transaction["id"], "paid", 5000)
 
@@ -226,6 +235,7 @@ class TestPixWebhookRefusals:
 
         assert_error(response, 401, "QIT002034")
         assert status_of(charge_b, account_b) == "pending"
+        assert status_of(charge_a, account_a) == "pending"
 
     def test_notice_without_reference_is_refused(self):
         account, transaction = pending_pix(5000)
@@ -235,10 +245,20 @@ class TestPixWebhookRefusals:
         assert_error(response, 400, "QIT000001")
         assert balance(account) == 0
 
-    def test_paid_amount_above_the_ceiling_is_refused(self):
+    def test_paid_amount_above_the_recharge_ceiling_is_a_mismatch(self):
+        """Nenhuma cobrança passa do teto, então um aviso acima dele é sempre
+        divergência de valor: responde como tal, e o alarme toca."""
         account, transaction = pending_pix(5000)
 
         response = pix_webhook(transaction["id"], "paid", MAXIMUM_AMOUNT_CENTS + 1)
+
+        assert_error(response, 422, "QIT002035")
+        assert balance(account) == 0
+
+    def test_paid_amount_beyond_what_the_database_holds_is_refused(self):
+        account, transaction = pending_pix(5000)
+
+        response = pix_webhook(transaction["id"], "paid", 2**63)
 
         assert_error(response, 400, "QIT000001")
         assert balance(account) == 0
@@ -253,7 +273,7 @@ class TestPixWebhookRefusals:
 
     def test_paid_after_expired_is_an_invalid_transition(self):
         account, transaction = pending_pix(5000)
-        pix_webhook(transaction["id"], "expired", 5000)
+        setup_ok(pix_webhook(transaction["id"], "expired", 5000))
 
         response = pix_webhook(transaction["id"], "paid", 5000)
 
@@ -262,3 +282,15 @@ class TestPixWebhookRefusals:
 
     def test_unknown_transaction(self):
         assert_error(pix_webhook(new_uuid(), "paid", 5000), 404, "QIT002023")
+
+    def test_notice_for_a_card_recharge_is_not_found(self):
+        """O webhook só conhece transações Pix: o id de uma recarga de cartão
+        responde como um id que não existe, mesmo com assinatura válida."""
+        mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, {"status": "approved", "authorization_id": "auth-1"})
+        account = Event().user_account()
+        card_recharge = setup_ok(recharge(account, "card", 5000, card_token="tok-card"))
+
+        response = pix_webhook(card_recharge["id"], "paid", 5000)
+
+        assert_error(response, 404, "QIT002023")
+        assert balance(account) == 5000

@@ -27,6 +27,7 @@ corpo inteiro, então um aviso assinado só vale para a cobrança dele.
 """
 
 import json
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -69,6 +70,23 @@ def expect(method: str, path: str, status_code: int, body: dict = None, delay_se
     ).raise_for_status()
 
 
+def expect_dropped_connection(method: str, path: str) -> None:
+    """O ator recebe o pedido inteiro e fecha a conexão sem responder.
+
+    É o caso mais traiçoeiro para quem chama: o pedido chegou ao provedor,
+    então a cobrança pode ter acontecido, mas a resposta nunca vem.
+    """
+    expectation = {
+        "httpRequest": {"method": method, "path": path},
+        "httpError": {"dropConnection": True},
+        "times": {"unlimited": True},
+    }
+
+    requests.put(
+        f"{MOCKSERVER_URL}/mockserver/expectation", json=expectation, timeout=TIMEOUT_SECONDS
+    ).raise_for_status()
+
+
 def received(method: str, path: str, times: int, json_fields: dict = None) -> bool:
     """O ator recebeu exatamente `times` pedidos assim?
 
@@ -90,6 +108,18 @@ def received(method: str, path: str, times: int, json_fields: dict = None) -> bo
 
     # 202: a verificação bateu. 406: não bateu (o corpo diz o que chegou).
     return response.status_code == 202
+
+
+def wait_until_received(method: str, path: str, times: int, deadline_seconds: float = 10) -> None:
+    """Espera o ator receber o pedido, em vez de dormir um tempo fixo.
+
+    Um `sleep` adivinha quanto a API demora; numa máquina lenta ele erra.
+    Aqui o teste só segue quando o pedido de fato chegou ao provedor.
+    """
+    give_up_at = time.monotonic() + deadline_seconds
+    while not received(method, path, times):
+        assert time.monotonic() < give_up_at, f"o ator não recebeu {times} pedido(s) {method} {path} a tempo"
+        time.sleep(0.05)
 
 
 def pix_charge_answer(minutes_to_expire: int = 60) -> dict:

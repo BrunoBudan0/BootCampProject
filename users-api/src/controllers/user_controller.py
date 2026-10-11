@@ -1,5 +1,5 @@
 from controllers.base_controller import BaseController
-from dtos import AttendeeDTO, CompanyDTO, OrganizerDTO
+from dtos import AttendeeDTO, CompanyDTO, IdentityDTO, OrganizerDTO
 from errors import InvalidCredentials, NotAuthenticated, NotFoundCompany
 from models import Attendee, Company, Organizer
 from repositories import AttendeeRepository, CompanyRepository, OrganizerRepository
@@ -41,9 +41,9 @@ class UserController(BaseController):
         if user is None or not password_is_right:
             raise InvalidCredentials()
 
-        user_dto = DTO_BY_USER_TYPE[user_type].obj_to_dict(user)
-        self.logger.info(f"Login of {user_type} {user_dto['id']}")
-        return user_dto
+        identity_dto = IdentityDTO.from_profile(DTO_BY_USER_TYPE[user_type].obj_to_dict(user))
+        self.logger.info(f"Login of {user_type} {identity_dto['id']}")
+        return identity_dto
 
     def get_caller(self) -> dict:
         caller_id = self.context.caller_id

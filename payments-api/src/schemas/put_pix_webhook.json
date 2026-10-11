@@ -3,7 +3,7 @@
   "type": "object",
   "properties": {
     "status": { "enum": ["paid", "expired"] },
-    "amount_cents": { "type": "integer", "maximum": 10000000 },
+    "amount_cents": { "type": "integer", "maximum": 9223372036854775807 },
     "reference": { "type": "string", "minLength": 1, "maxLength": 80 }
   },
   "required": ["status", "amount_cents", "reference"],

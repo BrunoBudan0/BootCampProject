@@ -49,6 +49,8 @@ class TestConcurrency:
         statuses = [response.status_code for response in responses]
         assert statuses.count(201) == 1, statuses
         assert statuses.count(200) == PARALLEL_REQUESTS - 1, [response.text for response in responses]
+        batches = {tuple(transaction["id"] for transaction in response.json()["transactions"]) for response in responses}
+        assert len(batches) == 1, batches
         assert balance(buyer) == 0
         assert balance(stand) == 3000
 

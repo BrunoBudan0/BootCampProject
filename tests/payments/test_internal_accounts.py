@@ -13,9 +13,9 @@ Respostas: 201 a conta · 200 a mesma conta (mesma chave) · 400 QIT000001
            · 409 QIT002036 (o evento já tem essa conta, com outra chave)
 """
 
-from concurrent.futures import ThreadPoolExecutor
+import pytest
 
-from tests.utils.payments import assert_error, is_uuid, new_key, new_uuid
+from tests.utils.payments import assert_error, fire_together, is_uuid, new_key, new_uuid, setup_ok
 from tests.utils.services import payments, users
 
 
@@ -94,7 +94,7 @@ class TestCreateAccount:
 
     def test_same_key_with_other_content_is_refused(self):
         payload = new_account()
-        create(payload)
+        setup_ok(create(payload))
 
         response = create(new_account(idempotency_key=payload["idempotency_key"]))
 
@@ -102,7 +102,7 @@ class TestCreateAccount:
 
     def test_same_key_with_other_holder_type_is_refused(self):
         payload = new_account()
-        create(payload)
+        setup_ok(create(payload))
 
         response = create({**payload, "holder_type": "company"})
 
@@ -110,25 +110,18 @@ class TestCreateAccount:
 
 
 class TestOneAccountPerOwnerAndKindInEachEvent:
-    def test_second_fee_account_in_the_same_event_is_refused(self):
-        first = new_system_account("fee")
-        create(first)
+    @pytest.mark.parametrize("kind", ["fee", "external"])
+    def test_second_system_account_of_the_same_kind_in_the_same_event_is_refused(self, kind):
+        first = new_system_account(kind)
+        setup_ok(create(first))
 
-        response = create(new_system_account("fee", event_id=first["event_id"]))
-
-        assert_error(response, 409, "QIT002036")
-
-    def test_second_external_account_in_the_same_event_is_refused(self):
-        first = new_system_account("external")
-        create(first)
-
-        response = create(new_system_account("external", event_id=first["event_id"]))
+        response = create(new_system_account(kind, event_id=first["event_id"]))
 
         assert_error(response, 409, "QIT002036")
 
     def test_same_holder_cannot_get_two_accounts_in_the_same_event(self):
         first = new_account()
-        create(first)
+        setup_ok(create(first))
 
         response = create(new_account(event_id=first["event_id"], holder_id=first["holder_id"]))
 
@@ -145,21 +138,18 @@ class TestOneAccountPerOwnerAndKindInEachEvent:
 
 class TestCreateAccountConcurrency:
     def test_parallel_requests_with_the_same_key_create_one_account(self):
-        """É o único teste que passa pelo caminho do IntegrityError da conta.
-
-        As requisições atravessam juntas a consulta prévia ("já existe conta
-        com esta chave?"), todas respondem "não", e quem fecha a janela é o
-        UNIQUE do banco. A que perde a corrida responde como replay (200, a
-        mesma conta) — nunca 500 e nunca 409, porque o pedido é o mesmo.
+        """As requisições atravessam juntas a consulta prévia ("já existe
+        conta com esta chave?"), todas respondem "não", e quem fecha a janela
+        é o UNIQUE do banco. A que perde a corrida responde como replay (200,
+        a mesma conta) — nunca 500 e nunca 409, porque o pedido é o mesmo.
         """
         payload = new_account()
 
-        with ThreadPoolExecutor(max_workers=10) as pool:
-            responses = list(pool.map(lambda _: create(payload), range(10)))
+        responses = fire_together(lambda: create(payload), 10)
 
         statuses = [response.status_code for response in responses]
         assert statuses.count(201) == 1, statuses
-        assert set(statuses) <= {200, 201}, statuses
+        assert statuses.count(200) == 9, statuses
         assert len({response.json()["id"] for response in responses}) == 1
 
 
