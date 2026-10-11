@@ -1,1 +1,3 @@
-from connectors.rest_connector import BaseConnectorResponse, RestConnector
+from connectors.rest_connector import RestConnector, BaseConnectorResponse
+from connectors.upstream_connector import UpstreamConnector, UpstreamResponse
+from connectors.users_connector import UsersConnector

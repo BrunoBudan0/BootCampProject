@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from constants import check_variables
+from constants import SIGNUP_PER_IP, WEBHOOK_PER_IP, check_variables
 from errors import register_error_handlers
 from errors.base_error import error_verification
 from middlewares import (
@@ -9,7 +9,7 @@ from middlewares import (
     register_request_logger_middleware,
     register_session_manager_middleware,
 )
-from resources import HealthCheckResource
+from resources import AuthResource, HealthCheckResource, ProxyResource
 from utils.logger import setup_logging
 
 
@@ -133,6 +133,37 @@ def create_app() -> FastAPI:
 
     # As rotas deste serviço entram aqui, uma linha por endereço e verbo,
     # seguindo a tabela de rotas da RFC.
+
+    auth_resource = AuthResource()
+    application.add_api_route("/auth/login", auth_resource.on_post_login, methods=["POST"])
+
+    # cadastro e webhook passam sem sessão, com limite de tentativas por IP
+    signup = ProxyResource("users", needs_session=False, limit=("signup", *SIGNUP_PER_IP))
+    for path in ("/attendees", "/organizers", "/companies"):
+        application.add_api_route(path, signup.forward, methods=["POST"])
+    webhook = ProxyResource("payments", needs_session=False, limit=("webhook", *WEBHOOK_PER_IP))
+    application.add_api_route("/webhooks/pix/{rest:path}", webhook.forward, methods=["PUT"])
+
+    # o resto exige AUTH-TOKEN; /internal/* não tem rota aqui e responde 404
+    users = ProxyResource("users")
+    events = ProxyResource("events")
+    payments = ProxyResource("payments")
+    for path, methods, resource in (
+        ("/me", ["GET"], users),
+        ("/events", ["GET", "POST"], events),
+        ("/events/{rest:path}", ["GET", "POST", "PUT"], events),
+        ("/event-attendees/{rest:path}", ["PUT"], events),
+        ("/products", ["GET", "POST"], events),
+        ("/products/{rest:path}", ["GET", "PUT"], events),
+        ("/purchases", ["POST"], events),
+        ("/purchases/{rest:path}", ["GET", "POST"], events),
+        ("/accounts", ["GET"], payments),
+        ("/accounts/{rest:path}", ["GET"], payments),
+        ("/transactions/{rest:path}", ["GET"], payments),
+        ("/transfers", ["POST"], payments),
+        ("/recharges", ["POST"], payments),
+    ):
+        application.add_api_route(path, resource.forward, methods=methods)
 
     register_error_handlers(application)
 

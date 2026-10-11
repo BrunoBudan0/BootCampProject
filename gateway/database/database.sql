@@ -1,14 +1,16 @@
--- ============================================================
 -- Banco do API Gateway
--- ============================================================
--- Tabelas deste banco, segundo a RFC:
---   session
---
--- Combinado do time sobre chaves:
---   - `id` interno para PK DENTRO deste banco; ele nunca sai na
---     resposta (R5);
---   - user_id chega da API de Usuários: é UUID, sem FK.
---   - a sessão guarda o HASH do token, nunca o token.
---
--- Este arquivo roda UMA vez, quando o volume do banco nasce. Mudou o
--- arquivo? `docker compose down -v` e suba de novo.
+-- mudou algo aqui? docker compose down -v e sobe de novo
+
+-- session: guarda o hash do token, nunca o token
+CREATE TABLE session (
+    id          BIGSERIAL PRIMARY KEY,
+    token_hash  CHAR(64)    NOT NULL,
+    user_id     UUID        NOT NULL,                    -- REF usuários
+    user_type   VARCHAR(20) NOT NULL CHECK (user_type IN ('attendee', 'organizer', 'company')),
+    expires_at  TIMESTAMPTZ NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_session_token_hash UNIQUE (token_hash),
+    CONSTRAINT ck_session_token_hash CHECK (token_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_session_expires CHECK (expires_at > created_at)
+);
+CREATE INDEX ix_session_user ON session (user_id);

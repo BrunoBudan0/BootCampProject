@@ -6,6 +6,7 @@
 # as APIs foram escritas.
 
 pytest==7.4.4
+pytest-xdist==3.6.1
 requests==2.32.3
 # Lê o .env da raiz (se existir), para os testes usarem as mesmas
 # portas e tokens que o docker compose.

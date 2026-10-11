@@ -1,3 +1,4 @@
+import functools
 import random
 import uuid
 
@@ -29,6 +30,13 @@ def create_company():
     })
     assert response.status_code == 201, response.text
     return response.json()["id"]
+
+
+@functools.lru_cache(maxsize=1)
+def shared_company():
+    # cada feira é um evento novo, então a mesma empresa pode ter stand em todas;
+    # poupa um cadastro (e um scrypt) por teste
+    return create_company()
 
 
 def create_event(organizer_id, fee_rate_bps=500, cashback_rate_bps=200):
@@ -99,7 +107,7 @@ class Fair:
     def __init__(self, price_cents=4000, stock=10, fee_rate_bps=500, cashback_rate_bps=200, balance=100_000):
         self.organizer = uuid.uuid4()
         self.event_id = create_event(self.organizer, fee_rate_bps, cashback_rate_bps)
-        self.company_id = create_company()
+        self.company_id = shared_company()
         self.stand_id = create_stand(self.organizer, self.event_id, self.company_id)
         self.product_id = create_product(self.company_id, self.stand_id, price_cents, stock)
         self.attendee, self.credential_id = take_funded_credential(self.event_id, self.organizer, balance)

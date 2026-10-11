@@ -37,7 +37,7 @@ class RestConnector(metaclass=ABCMeta):
         self.timeout = timeout
         self.internal_token = internal_token
 
-    def send(self, endpoint: str, method: str, payload: dict = None, headers: dict = None):
+    def send(self, endpoint: str, method: str, payload: dict | None = None, headers: dict | None = None):
         if headers is None:
             headers = {}
 
