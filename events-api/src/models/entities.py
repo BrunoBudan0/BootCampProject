@@ -115,6 +115,10 @@ class Purchase(Base):
     cashback_rate_id: Mapped[uuid.UUID] = _fk("cashback_rate.id")
     cashback_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    cancel_code: Mapped[Optional[str]] = mapped_column(CHAR(9))
+    refund_reason: Mapped[Optional[str]] = mapped_column(String(500))
+    refunded_by: Mapped[Optional[uuid.UUID]] = _ref(nullable=True)
+    refunded_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now, onupdate=_now)
 

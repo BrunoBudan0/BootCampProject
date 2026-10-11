@@ -11,6 +11,8 @@ def event_to_dict(event: Event, fee_rate: FeeRate, cashback_rate: CashbackRate) 
         "active": event.active,
         "fee_rate_bps": fee_rate.rate_bps,
         "cashback_rate_bps": cashback_rate.rate_bps,
+        "fee_account_id": str(event.fee_account_id),
+        "external_account_id": str(event.external_account_id),
         "created_at": event.created_at.isoformat(),
     }
 

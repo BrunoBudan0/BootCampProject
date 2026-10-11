@@ -157,6 +157,19 @@ class InsufficientStock(QIException):
         )
 
 
+class StockChanged(QIException):
+    code = "QIT002027"
+
+    def __init__(self) -> None:
+        super().__init__(
+            title="Stock changed",
+            code=self.code,
+            http_status=409,
+            description="The stock changed since it was read. Read the product again.",
+            translation="O estoque mudou desde a leitura. Consulte o produto de novo.",
+        )
+
+
 class InsufficientBalance(QIException):
     code = "QIT002021"
 

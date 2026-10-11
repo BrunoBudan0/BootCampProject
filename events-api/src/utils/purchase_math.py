@@ -1,6 +1,8 @@
 import uuid
 from dataclasses import dataclass
 
+from models.enums import TransactionType
+
 BPS = 10_000
 
 
@@ -69,3 +71,23 @@ def calculate(lines: list[PricedLine], fee_rate_bps: int, cashback_rate_bps: int
         fee_cents=percent_of(total, fee_rate_bps),
         cashback_cents=percent_of(total, cashback_rate_bps),
     )
+
+
+@dataclass(frozen=True)
+class Leg:
+    type: str
+    source_account_id: uuid.UUID
+    destination_account_id: uuid.UUID
+    amount_cents: int
+
+
+def purchase_legs(amounts: PurchaseAmounts, buyer_account, stand_account, fee_account) -> list[Leg]:
+    # a ordem importa: o stand recebe antes de repassar a tarifa,
+    # e a conta fee recebe a tarifa antes de pagar o cashback
+    legs = [
+        Leg(TransactionType.PURCHASE.value, buyer_account, stand_account, amounts.total_cents),
+        Leg(TransactionType.FEE.value, stand_account, fee_account, amounts.fee_cents),
+        Leg(TransactionType.CASHBACK.value, fee_account, buyer_account, amounts.cashback_cents),
+    ]
+    # Pagamentos recusa valor zero, e perna de zero não move nada
+    return [leg for leg in legs if leg.amount_cents > 0]

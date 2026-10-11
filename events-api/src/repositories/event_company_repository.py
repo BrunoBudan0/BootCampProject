@@ -10,7 +10,7 @@ class EventCompanyRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def get_by_id(self, event_company_id):
+    def get_by_id(self, event_company_id) -> EventCompany | None:
         return self.session.get(EventCompany, event_company_id)
 
     def find(self, event_id, company_id):

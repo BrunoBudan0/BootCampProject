@@ -12,10 +12,10 @@ class EventRepository:
         self.session.add_all(rows)
         self.session.flush()
 
-    def get_by_id(self, event_id):
+    def get_by_id(self, event_id) -> Event | None:
         return self.session.get(Event, event_id)
 
-    def get_for_update(self, event_id):
+    def get_for_update(self, event_id) -> Event | None:
         # trava o evento: duas mudanças de taxa no mesmo evento fazem fila
         query = select(Event).where(Event.id == event_id).with_for_update()
         return self.session.scalars(query).first()

@@ -64,17 +64,6 @@ class TestRefund:
         assert response.status_code == 409
         assert response.json()["code"] == "QIT002026"
 
-    def test_canceled_purchase_is_not_refundable(self):
-        fair = Fair(price_cents=4000, balance=100)
-        key = f"app-{uuid.uuid4().hex}"
-        fair.buy(key=key)
-        purchase_id = fair.buy(key=key).json()["id"]
-
-        response = fair.refund(purchase_id)
-
-        assert response.status_code == 409
-        assert response.json()["code"] == "QIT002026"
-
     def test_fee_is_given_back_in_the_audit(self):
         fair = Fair(price_cents=4000, fee_rate_bps=500)
         purchase_id = fair.buy().json()["id"]

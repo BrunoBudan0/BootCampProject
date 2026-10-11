@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from constants import check_variables
@@ -9,8 +11,18 @@ from middlewares import (
     register_request_logger_middleware,
     register_session_manager_middleware,
 )
-from resources import EventResource, HealthCheckResource, ProductResource, PurchaseResource
+from resources import CredentialResource, EventResource, HealthCheckResource, ProductResource, PurchaseResource
 from utils.logger import setup_logging
+from workers import start_pending_worker
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # a rotina que resolve compras pending roda junto com a API
+    stop = start_pending_worker()
+    yield
+    if stop is not None:
+        stop.set()
 
 
 def create_app() -> FastAPI:
@@ -36,6 +48,7 @@ def create_app() -> FastAPI:
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
 
     # ────────────────────────────────────────────────────────────────
@@ -131,8 +144,6 @@ def create_app() -> FastAPI:
         methods=["GET"]
     )
 
-    # As rotas deste serviço entram aqui, uma linha por endereço e verbo,
-    # seguindo a tabela de rotas da RFC.
     event_resource = EventResource()
 
     application.add_api_route("/events", event_resource.on_post, methods=["POST"])
@@ -143,6 +154,13 @@ def create_app() -> FastAPI:
     application.add_api_route("/events/{event_id}/fee-rate", event_resource.on_put_fee_rate, methods=["PUT"])
     application.add_api_route("/events/{event_id}/cashback-rate", event_resource.on_put_cashback_rate, methods=["PUT"])
     application.add_api_route("/events/{event_id}/cashback-rates", event_resource.on_get_cashback_rates, methods=["GET"])
+    application.add_api_route("/events/{event_id}/cash-recharges", event_resource.on_post_cash_recharge, methods=["POST"])
+    application.add_api_route("/events/{event_id}/fee-charges", event_resource.on_get_fee_charges, methods=["GET"])
+    application.add_api_route("/events/{event_id}/reconciliation", event_resource.on_get_reconciliation, methods=["GET"])
+
+    credential_resource = CredentialResource()
+
+    application.add_api_route("/event-attendees/{event_attendee_id}/block", credential_resource.on_put_block, methods=["PUT"])
 
     product_resource = ProductResource()
 
@@ -150,15 +168,24 @@ def create_app() -> FastAPI:
     application.add_api_route("/products", product_resource.on_get_list, methods=["GET"])
     application.add_api_route("/products/{product_id}", product_resource.on_get, methods=["GET"])
     application.add_api_route("/products/{product_id}", product_resource.on_put, methods=["PUT"])
+
     purchase_resource = PurchaseResource()
 
     application.add_api_route("/purchases", purchase_resource.on_post, methods=["POST"])
+    application.add_api_route("/purchases/{purchase_id}", purchase_resource.on_get, methods=["GET"])
+    application.add_api_route("/purchases/{purchase_id}/refund", purchase_resource.on_post_refund, methods=["POST"])
+
+    # As rotas deste serviço entram aqui, uma linha por endereço e verbo,
+    # seguindo a tabela de rotas da RFC.
+
     register_error_handlers(application)
 
     return application
 
 
 def main() -> FastAPI:
+    # Não deixa a API subir com configuração faltando: é melhor falhar
+    # agora, na hora de ligar, do que na cara do cliente mais tarde.
     check_variables()
     error_verification()
     setup_logging()

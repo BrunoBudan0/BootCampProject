@@ -9,11 +9,7 @@ def error_verification():
     for _class in clsmembers:
         class_name = _class[0]
         class_type = _class[1]
-        is_custom_exception = False
         if issubclass(class_type, QIException) and class_name != "QIException":
-            is_custom_exception = True
-
-        if is_custom_exception:
             code = class_type.code
             if errors_dict.get(code) is not None:
                 used_class_name = errors_dict[code]
@@ -23,6 +19,8 @@ def error_verification():
 
 
 class QIException(Exception):
+    code: str = ""
+
     def __init__(self, title, code, http_status, description, translation) -> None:
         self.title = title
         self.description = description

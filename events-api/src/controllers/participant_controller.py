@@ -10,8 +10,10 @@ from errors import (
     EventNotFound,
     NotAllowedForUserType,
 )
-from models import EventAttendee, EventCompany, UserType
+from errors import QIException
+from models import CriticalLogType, EventAttendee, EventCompany, UserType
 from repositories import EventAttendeeRepository, EventCompanyRepository, EventRepository
+from utils.critical_log import critical_log
 
 
 class ParticipantController(BaseController):
@@ -42,7 +44,7 @@ class ParticipantController(BaseController):
 
         self.users.ensure_company_exists(company_id)
         account_id = self.payments.create_account(
-            event_id, company_id, "user", f"account:{event_id}:{company_id}"
+            event_id, "user", f"acct:{event_id}:{company_id}", holder_id=company_id
         )
 
         stand = EventCompany(
@@ -51,8 +53,7 @@ class ParticipantController(BaseController):
             stand_name=payload["stand_name"],
             account_id=account_id,
         )
-        self.stands.add(stand)
-        self.session.commit()
+        self._save(stand, self.stands.add, account_id, user_id)
 
         return stand_to_dict(stand)
 
@@ -72,11 +73,27 @@ class ParticipantController(BaseController):
         self.session.rollback()
 
         account_id = self.payments.create_account(
-            event_id, user_id, "user", f"account:{event_id}:{user_id}"
+            event_id, "user", f"acct:{event_id}:{user_id}", holder_id=user_id
         )
 
         credential = EventAttendee(event_id=event_id, attendee_id=user_id, account_id=account_id)
-        self.credentials.add(credential)
-        self.session.commit()
+        self._save(credential, self.credentials.add, account_id, user_id)
 
         return credential_to_dict(credential)
+
+    def _save(self, row, add, account_id, user_id) -> None:
+        try:
+            add(row)
+            self.session.commit()
+        except QIException:
+            # empresa ou pessoa repetida: a chave devolveu a mesma conta, não sobra nada solto
+            raise
+        except Exception:
+            self.session.rollback()
+            critical_log(
+                CriticalLogType.ORPHAN_ACCOUNT,
+                "conta criada em Pagamentos, mas o stand ou a credencial não foi gravado",
+                account_id=account_id,
+                user_id=user_id,
+            )
+            raise

@@ -2,7 +2,7 @@ import uuid
 
 from controllers.base_controller import BaseController
 from dtos import product_to_dict
-from errors import EventNotFound, NonPositiveAmount, NotAllowedForUserType, ProductNotFound
+from errors import EventNotFound, NonPositiveAmount, NotAllowedForUserType, ProductNotFound, StockChanged
 from models import Product, UserType
 from repositories import EventCompanyRepository, ProductRepository
 
@@ -61,7 +61,11 @@ class ProductController(BaseController):
         if "price_cents" in payload and payload["price_cents"] <= 0:
             raise NonPositiveAmount()
 
-        for field in ("name", "price_cents", "stock", "active"):
+        if "stock" in payload:
+            if not self.products.set_stock(product.id, payload["expected_stock"], payload["stock"]):
+                raise StockChanged()
+
+        for field in ("name", "price_cents", "active"):
             if field in payload:
                 setattr(product, field, payload[field])
 

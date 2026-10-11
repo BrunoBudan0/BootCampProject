@@ -1,5 +1,0 @@
-from repositories.event_repository import EventRepository
-from repositories.event_company_repository import EventCompanyRepository
-from repositories.event_attendee_repository import EventAttendeeRepository
-from repositories.product_repository import ProductRepository
-from repositories.purchase_repository import KeyAlreadyUsed, PurchaseRepository, StockCheckTriggered

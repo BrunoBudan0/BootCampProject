@@ -64,15 +64,16 @@ resources/     a porta HTTP: lê a requisição e escolhe o status
 controllers/   a regra de negócio e o commit
 repositories/  o único lugar com SQL
 connectors/    Usuários e Pagamentos
-utils/purchase_math.py   o cálculo da compra, sem banco e sem HTTP
+utils/purchase_math.py   o cálculo da compra e as pernas, com o type de cada uma
 workers/       a rotina de compras pendentes
 ```
 
 ## Testes
 
 ```powershell
-pytest tests/events/unit -v     # cálculo da compra, sem subir nada
 pytest tests/events -v          # pela API, com o docker compose de pé
 ```
+
+Os testes são caixa-preta: falam só por HTTP e não importam nada de `src/`.
 
 Os testes de compra dependem das rotas internas de Usuários e Pagamentos.

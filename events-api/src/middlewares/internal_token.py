@@ -1,8 +1,11 @@
 from fastapi import FastAPI, Request
+from starlette.concurrency import run_in_threadpool
 
 from constants import BYPASS_ENDPOINTS, INTERNAL_TOKEN
 from errors.base_error import ForbiddenNotInternal
 from errors.handlers import qi_exception_to_response
+from models import CriticalLogType
+from utils.critical_log import critical_log
 
 
 def register_internal_token_middleware(application: FastAPI) -> None:
@@ -25,6 +28,15 @@ def register_internal_token_middleware(application: FastAPI) -> None:
             return await call_next(request)
 
         if request.headers.get("INTERNAL-TOKEN") != INTERNAL_TOKEN:
+            # toda rota desta API é interna: só o Gateway chama
+            await run_in_threadpool(
+                critical_log,
+                CriticalLogType.INTERNAL_CALL_REJECTED,
+                f"chamada sem INTERNAL-TOKEN válido vinda de {request.client.host if request.client else '?'}",
+                route=f"{request.method} {request.url.path}"[:120],
+                http_status=403,
+                error_code=ForbiddenNotInternal.code,
+            )
             return qi_exception_to_response(ForbiddenNotInternal())
 
         return await call_next(request)

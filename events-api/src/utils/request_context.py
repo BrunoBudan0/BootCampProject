@@ -57,7 +57,7 @@ def set_request_id(request_id: str) -> None:
     _request_id.set(request_id)
 
 
-def build_request_id(received_request_id: str = None) -> str:
+def build_request_id(received_request_id: str | None = None) -> str:
     """Aproveita o identificador que veio de fora, ou inventa um novo.
 
     Aproveitar o que veio é o que permite seguir um mesmo pedido

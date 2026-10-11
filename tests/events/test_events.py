@@ -64,8 +64,16 @@ class TestGetEvent:
         assert response.json()["code"] == "QIT002010"
 
     def test_list_is_paginated(self):
-        response = events.send("GET", "/events?limit=1&page=1", headers=organizer_headers())
+        for _ in range(2):
+            events.send("POST", "/events", json=new_event_body(), headers=organizer_headers())
 
-        assert response.status_code == 200
-        assert "data" in response.json()
-        assert "is_last_page" in response.json()
+        first = events.send("GET", "/events?limit=1&page=1", headers=organizer_headers())
+
+        assert first.status_code == 200
+        assert len(first.json()["data"]) == 1
+        assert first.json()["is_last_page"] is False
+
+    def test_limit_above_100_is_refused(self):
+        response = events.send("GET", "/events?limit=101", headers=organizer_headers())
+
+        assert response.status_code == 400

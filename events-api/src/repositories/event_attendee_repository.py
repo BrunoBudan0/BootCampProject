@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,8 +10,22 @@ class EventAttendeeRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def get_by_id(self, event_attendee_id):
+    def get_by_id(self, event_attendee_id) -> EventAttendee | None:
         return self.session.get(EventAttendee, event_attendee_id)
+
+    def set_blocked(self, credential: EventAttendee, blocked: bool) -> bool:
+        # devolve se mudou de verdade: bloquear o que já está bloqueado não é evento
+        query = (
+            update(EventAttendee)
+            .where(EventAttendee.id == credential.id, EventAttendee.blocked.is_not(blocked))
+            .values(blocked=blocked)
+            .returning(EventAttendee.id)
+            .execution_options(synchronize_session=False)
+        )
+        changed = self.session.execute(query).first() is not None
+        if changed:
+            self.session.refresh(credential)
+        return changed
 
     def find(self, event_id, attendee_id):
         query = select(EventAttendee).where(

@@ -4,8 +4,9 @@ from connectors import PaymentsConnector
 from controllers.base_controller import BaseController
 from dtos import event_summary_to_dict, event_to_dict
 from errors import CashbackAboveFee, EventNotFound, NotAllowedForUserType
-from models import CashbackRate, Event, FeeRate, UserType
+from models import CashbackRate, CriticalLogType, Event, FeeRate, UserType
 from repositories import EventRepository
+from utils.critical_log import critical_log
 
 INITIAL_RATE_REASON = "Taxa inicial do evento"
 
@@ -29,10 +30,10 @@ class EventController(BaseController):
 
         # contas primeiro, sem transação aberta; a chave deixa o reenvio seguro
         fee_account_id = self.payments.create_account(
-            event_id, user_id, "fee", f"account:{event_id}:fee"
+            event_id, "fee", f"acct:{event_id}:fee"
         )
         external_account_id = self.payments.create_account(
-            event_id, user_id, "external", f"account:{event_id}:external"
+            event_id, "external", f"acct:{event_id}:external"
         )
 
         event = Event(
@@ -53,9 +54,20 @@ class EventController(BaseController):
             reason=INITIAL_RATE_REASON, organizer_id=user_id,
         )
 
-        self.repository.add(event)
-        self.repository.add(fee_rate, cashback_rate)
-        self.session.commit()
+        try:
+            self.repository.add(event)
+            self.repository.add(fee_rate, cashback_rate)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            for account_id in (fee_account_id, external_account_id):
+                critical_log(
+                    CriticalLogType.ORPHAN_ACCOUNT,
+                    f"conta criada para o evento {event_id}, mas o evento não foi gravado",
+                    account_id=account_id,
+                    user_id=user_id,
+                )
+            raise
 
         self.logger.info(f"evento {event_id} criado")
         return event_to_dict(event, fee_rate, cashback_rate)

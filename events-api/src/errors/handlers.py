@@ -12,9 +12,13 @@ from errors.base_error import (
     NotFoundResource,
 )
 from utils.logger import get_logger
+from models import CriticalLogType
+from utils.critical_log import critical_log, parse_user_id
 
 
 logger = get_logger(__name__)
+
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 def qi_exception_to_response(exception: QIException) -> JSONResponse:
@@ -98,4 +102,13 @@ def register_error_handlers(application: FastAPI) -> None:
     @application.exception_handler(Exception)
     def handle_unexpected_error(request: Request, exception: Exception) -> JSONResponse:
         logger.exception(f"Erro inesperado em {request.method} {request.url.path}")
+        if request.method in WRITE_METHODS:
+            critical_log(
+                CriticalLogType.UNEXPECTED_ERROR,
+                f"{type(exception).__name__}: {exception}",
+                route=f"{request.method} {request.url.path}"[:120],
+                http_status=500,
+                error_code=InternalError.code,
+                user_id=parse_user_id(request.headers.get("X-User-Id")),
+            )
         return qi_exception_to_response(InternalError())

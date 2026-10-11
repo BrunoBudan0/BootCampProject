@@ -1,31 +1,14 @@
--- ============================================================
--- Banco da API de Eventos  (segue a RFC v7)
--- ============================================================
--- Tabelas: event, fee_rate, cashback_rate, event_company,
---   event_attendee, product, purchase, purchase_product,
---   fee_charge, critical_log_event
---
--- Chaves (RFC v7, "Convenções e decisões de modelagem"):
---   - a PK é um UUID gerado pela APLICAÇÃO, e é ele que sai na resposta;
---     o DEFAULT só existe como rede de segurança;
---   - FK só DENTRO deste banco. organizer_id, company_id, attendee_id,
---     account_id e transaction_id vêm de outro serviço: UUID sem FK.
---   - dinheiro em BIGINT (centavos); taxa em INTEGER (pontos-base, 500 = 5%).
---
--- Roda UMA vez, quando o volume nasce. Mudou? `docker compose down -v`.
+-- Banco da API de Eventos
+-- mudou algo aqui? docker compose down -v e sobe de novo
 
--- ------------------------------------------------------------
--- Gatilho reaproveitado: tabela que só aceita INSERT
--- ------------------------------------------------------------
+-- Gatilho reaproveitado
 CREATE OR REPLACE FUNCTION reject_change() RETURNS trigger AS $$
 BEGIN
     RAISE EXCEPTION 'Tabela % só aceita INSERT', TG_TABLE_NAME;
 END;
 $$ LANGUAGE plpgsql;
 
--- ------------------------------------------------------------
--- event: a feira
--- ------------------------------------------------------------
+-- event
 CREATE TABLE event (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organizer_id        UUID         NOT NULL,          -- REF usuários
@@ -39,9 +22,7 @@ CREATE TABLE event (
 );
 CREATE INDEX ix_event_organizer ON event (organizer_id);
 
--- ------------------------------------------------------------
--- fee_rate / cashback_rate: versões, só INSERT
--- ------------------------------------------------------------
+-- fee_rate / cashback_rate
 CREATE TABLE fee_rate (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id     UUID         NOT NULL REFERENCES event (id),
@@ -68,9 +49,7 @@ CREATE TRIGGER trg_cashback_rate_insert_only
     BEFORE UPDATE OR DELETE ON cashback_rate
     FOR EACH ROW EXECUTE FUNCTION reject_change();
 
--- ------------------------------------------------------------
--- event_company: o stand
--- ------------------------------------------------------------
+-- event_company
 CREATE TABLE event_company (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id   UUID         NOT NULL REFERENCES event (id),
@@ -81,9 +60,7 @@ CREATE TABLE event_company (
     CONSTRAINT uq_event_company UNIQUE (event_id, company_id)   -- 409 QIT002012
 );
 
--- ------------------------------------------------------------
--- event_attendee: a credencial
--- ------------------------------------------------------------
+-- event_attendee
 CREATE TABLE event_attendee (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id    UUID      NOT NULL REFERENCES event (id),
@@ -94,9 +71,7 @@ CREATE TABLE event_attendee (
     CONSTRAINT uq_event_attendee UNIQUE (event_id, attendee_id) -- 409 QIT002013
 );
 
--- ------------------------------------------------------------
 -- product
--- ------------------------------------------------------------
 CREATE TABLE product (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_company_id UUID         NOT NULL REFERENCES event_company (id),
@@ -107,13 +82,11 @@ CREATE TABLE product (
     active           BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at       TIMESTAMP    NOT NULL DEFAULT now(),
     CONSTRAINT uq_product_barcode UNIQUE (event_company_id, barcode),  -- 409 QIT002018
-    -- última defesa: se barrar, é bug -> STOCK_CHECK_TRIGGERED
+    -- se esse CHECK barrar, é bug (STOCK_CHECK_TRIGGERED)
     CONSTRAINT ck_product_stock CHECK (stock IS NULL OR stock >= 0)
 );
 
--- ------------------------------------------------------------
--- purchase: o comprovante e a âncora da idempotência
--- ------------------------------------------------------------
+-- purchase
 CREATE TABLE purchase (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_attendee_id UUID        NOT NULL REFERENCES event_attendee (id),
@@ -126,16 +99,24 @@ CREATE TABLE purchase (
     cashback_rate_id  UUID        NOT NULL REFERENCES cashback_rate (id),
     cashback_cents    BIGINT      NOT NULL CHECK (cashback_cents >= 0),
     idempotency_key   VARCHAR(80) NOT NULL,
+    cancel_code       CHAR(9),                             -- o erro que cancelou; o reenvio repete
+    refund_reason     VARCHAR(500),
+    refunded_by       UUID,                                -- REF usuários
+    refunded_at       TIMESTAMP,
     created_at        TIMESTAMP   NOT NULL DEFAULT now(),
     updated_at        TIMESTAMP   NOT NULL DEFAULT now(),
     CONSTRAINT uq_purchase_idempotency UNIQUE (idempotency_key),     -- 409 QIT002025 / replay
-    CONSTRAINT ck_purchase_amounts CHECK (cashback_cents <= fee_cents AND fee_cents <= total_cents)
+    CONSTRAINT ck_purchase_amounts CHECK (cashback_cents <= fee_cents AND fee_cents <= total_cents),
+    CONSTRAINT ck_purchase_cancel CHECK (status <> 'canceled' OR cancel_code IS NOT NULL),
+    -- estorno sempre com motivo, autor e data
+    CONSTRAINT ck_purchase_refund CHECK (
+        status <> 'refunded' OR
+        (refund_reason IS NOT NULL AND refunded_by IS NOT NULL AND refunded_at IS NOT NULL)
+    )
 );
 CREATE INDEX ix_purchase_pending ON purchase (status) WHERE status = 'pending';
 
--- ------------------------------------------------------------
--- purchase_product: foto do item na hora da compra
--- ------------------------------------------------------------
+-- purchase_product
 CREATE TABLE purchase_product (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     purchase_id      UUID         NOT NULL REFERENCES purchase (id),
@@ -146,9 +127,7 @@ CREATE TABLE purchase_product (
 );
 CREATE INDEX ix_purchase_product_purchase ON purchase_product (purchase_id);
 
--- ------------------------------------------------------------
--- fee_charge: auditoria da tarifa, só INSERT
--- ------------------------------------------------------------
+-- fee_charge
 CREATE TABLE fee_charge (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     purchase_id    UUID        NOT NULL REFERENCES purchase (id),
@@ -168,9 +147,7 @@ CREATE TRIGGER trg_fee_charge_insert_only
     BEFORE UPDATE OR DELETE ON fee_charge
     FOR EACH ROW EXECUTE FUNCTION reject_change();
 
--- ------------------------------------------------------------
--- critical_log_event: só o que alguém precisa agir ou explicar
--- ------------------------------------------------------------
+-- critical_log_event
 CREATE TABLE critical_log_event (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     request_id        VARCHAR(64),
@@ -193,7 +170,6 @@ CREATE TABLE critical_log_event (
         'CREDENTIAL_BLOCK_CHANGED', 'STOCK_CHECK_TRIGGERED',
         'PURCHASE_OUTCOME_UNKNOWN', 'RECONCILIATION_MISMATCH'
     )),
-    -- cada tipo exige o campo que o explica
     CONSTRAINT ck_log_fields CHECK (
         (type = 'INTERNAL_CALL_REJECTED'   AND http_status = 403) OR
         (type = 'UNEXPECTED_ERROR'         AND http_status = 500) OR

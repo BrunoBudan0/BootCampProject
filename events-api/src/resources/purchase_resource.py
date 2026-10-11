@@ -15,5 +15,21 @@ class PurchaseResource:
         for item in payload["items"]:
             parse_uuid(item["product_id"], "product_id")
 
-        body = PurchaseController().create_purchase(user_id, user_type, payload)
+        body, created = PurchaseController().create_purchase(user_id, user_type, payload)
+        return JSONResponse(
+            content=body,
+            status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    def on_get(self, request: Request, purchase_id: str) -> JSONResponse:
+        user_id, user_type = get_caller(request)
+        body = PurchaseController().get_receipt(user_id, user_type, parse_uuid(purchase_id, "id"))
+        return JSONResponse(content=body, status_code=status.HTTP_200_OK)
+
+    @SchemaHandler.validate("refund.json")
+    def on_post_refund(self, request: Request, purchase_id: str, payload: dict = Body(...)) -> JSONResponse:
+        user_id, user_type = get_caller(request)
+        body = PurchaseController().refund(
+            user_id, user_type, parse_uuid(purchase_id, "id"), payload["reason"]
+        )
         return JSONResponse(content=body, status_code=status.HTTP_201_CREATED)

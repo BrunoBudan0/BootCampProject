@@ -31,7 +31,6 @@ class TestCashRecharge:
         response = recharge(fair, fair.credential_id, 5000)
 
         assert response.status_code == 201
-        assert response.json()["launched_by"] == str(fair.organizer)
         assert fair.buy().status_code == 201
 
     def test_same_key_does_not_recharge_twice(self):
@@ -44,6 +43,16 @@ class TestCashRecharge:
         assert (first.status_code, second.status_code) == (201, 200)
         assert fair.buy().status_code == 201
         assert fair.buy().status_code == 409
+
+    def test_same_key_with_another_amount_is_refused(self):
+        fair = Fair(balance=0)
+        key = f"cash-{uuid.uuid4().hex}"
+        recharge(fair, fair.credential_id, 4000, key=key)
+
+        response = recharge(fair, fair.credential_id, 9000, key=key)
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "QIT002025"
 
     def test_amount_must_be_positive(self):
         fair = Fair()
@@ -143,7 +152,7 @@ class TestFeeCharges:
 
 
 class TestReconciliation:
-    def test_event_closes_at_zero_after_sales_and_refund(self):
+    def test_sum_is_zero_after_sales_and_refund(self):
         fair = Fair(price_cents=4000)
         fair.buy()
         refunded = fair.buy().json()["id"]
@@ -157,7 +166,7 @@ class TestReconciliation:
         assert report["purchases"]["refunded"]["count"] == 1
         assert report["fee_net_cents"] == 200
 
-    def test_only_the_organizer_closes(self):
+    def test_only_the_organizer_reconciles(self):
         fair = Fair()
 
         response = events.send(

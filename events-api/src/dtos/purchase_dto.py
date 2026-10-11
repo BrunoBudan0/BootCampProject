@@ -24,5 +24,11 @@ def receipt_to_dict(purchase: Purchase, items: list[PurchaseProduct], stand: Eve
         "cashback_cents": purchase.cashback_cents,
         "paid_cents": purchase.total_cents - purchase.cashback_cents,
         "idempotency_key": purchase.idempotency_key,
+        "refund": None if purchase.refunded_at is None else {
+            "reason": purchase.refund_reason,
+            "refunded_by": str(purchase.refunded_by),
+            "refunded_at": purchase.refunded_at.isoformat(),
+        },
         "created_at": purchase.created_at.isoformat(),
+        "updated_at": purchase.updated_at.isoformat(),
     }

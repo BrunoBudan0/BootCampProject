@@ -1,48 +1,19 @@
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
-from tests.events.helpers import (
-    create_company,
-    create_event,
-    create_product,
-    create_stand,
-    get_product,
-    headers,
-    take_credential,
-)
+from tests.events.helpers import Fair, create_company, create_product, create_stand, get_product, headers
 from tests.utils.services import events
 
 
-class Fair:
-    """Um evento montado: stand com produto e uma pessoa credenciada."""
-
-    def __init__(self, price_cents=4000, stock=10, fee_rate_bps=500, cashback_rate_bps=200):
-        self.organizer = uuid.uuid4()
-        self.event_id = create_event(self.organizer, fee_rate_bps, cashback_rate_bps)
-        self.company_id = create_company()
-        self.stand_id = create_stand(self.organizer, self.event_id, self.company_id)
-        self.product_id = create_product(self.company_id, self.stand_id, price_cents, stock)
-        self.attendee, self.credential_id = take_credential(self.event_id)
-
-    def buy(self, items=None, attendee=None, credential_id=None, key=None):
-        body = {
-            "event_attendee_id": credential_id or self.credential_id,
-            "event_company_id": self.stand_id,
-            "items": items or [{"product_id": self.product_id, "quantity": 1}],
-            "idempotency_key": key or f"app-{uuid.uuid4().hex}",
-        }
-        return events.send("POST", "/purchases", json=body, headers=headers("attendee", attendee or self.attendee))
-
-
 class TestReserve:
-    def test_purchase_is_reserved_with_prices_from_the_database(self):
+    def test_purchase_is_paid_with_prices_from_the_database(self):
         fair = Fair(price_cents=4000, stock=10)
 
         response = fair.buy([{"product_id": fair.product_id, "quantity": 2}])
 
         assert response.status_code == 201
         receipt = response.json()
-        assert receipt["status"] == "pending"
+        assert receipt["status"] == "paid"
         assert receipt["total_cents"] == 8000
         assert receipt["fee_cents"] == 400
         assert receipt["cashback_cents"] == 160
@@ -134,7 +105,7 @@ class TestRefusals:
 class TestConcurrency:
     def test_last_units_are_never_sold_twice(self):
         fair = Fair(stock=5)
-        buyers = [take_credential(fair.event_id) for _ in range(20)]
+        buyers = [fair.buyer() for _ in range(20)]
 
         def buy(buyer):
             attendee, credential_id = buyer
@@ -150,7 +121,7 @@ class TestConcurrency:
     def test_crossed_carts_do_not_deadlock(self):
         fair = Fair(stock=1000)
         other = create_product(fair.company_id, fair.stand_id, stock=1000)
-        buyers = [take_credential(fair.event_id) for _ in range(10)]
+        buyers = [fair.buyer() for _ in range(10)]
 
         def buy(index):
             attendee, credential_id = buyers[index]
@@ -164,7 +135,7 @@ class TestConcurrency:
         assert results == [201] * 10
         assert get_product(fair.product_id)["stock"] == 990
         assert get_product(other)["stock"] == 990
-        
+
 
 class TestIdempotency:
     def test_resend_returns_the_same_purchase(self):
@@ -209,7 +180,7 @@ class TestIdempotency:
         fair = Fair(stock=10)
         key = f"app-{uuid.uuid4().hex}"
         fair.buy(key=key)
-        stranger, stranger_credential = take_credential(fair.event_id)
+        stranger, stranger_credential = fair.buyer()
 
         response = fair.buy(key=key, attendee=stranger, credential_id=stranger_credential)
 
@@ -227,3 +198,76 @@ class TestIdempotency:
         assert statuses == [200] * 9 + [201]
         assert len({r.json()["id"] for r in responses}) == 1
         assert get_product(fair.product_id)["stock"] == 9
+
+
+class TestPayment:
+    def test_without_balance_the_purchase_is_canceled_and_stock_comes_back(self):
+        fair = Fair(price_cents=4000, stock=10, balance=3000)
+        key = f"app-{uuid.uuid4().hex}"
+
+        response = fair.buy(key=key)
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "QIT002021"
+        assert get_product(fair.product_id)["stock"] == 10
+
+    def test_resend_of_a_canceled_purchase_repeats_the_refusal(self):
+        fair = Fair(price_cents=4000, stock=10, balance=3000)
+        key = f"app-{uuid.uuid4().hex}"
+        fair.buy(key=key)
+
+        resend = fair.buy(key=key)
+
+        # mesma resposta da primeira vez: 200 aqui faria o app achar que pagou
+        assert resend.status_code == 409
+        assert resend.json()["code"] == "QIT002021"
+        assert get_product(fair.product_id)["stock"] == 10
+
+    def test_balance_pays_exactly_what_it_has(self):
+        # 4000 de compra e 80 de cashback: a pessoa precisa ter 4000 na hora
+        fair = Fair(price_cents=4000, stock=10, balance=4000)
+
+        response = fair.buy()
+
+        assert response.status_code == 201
+        assert response.json()["status"] == "paid"
+
+    def test_event_without_fee_still_sells(self):
+        fair = Fair(fee_rate_bps=0, cashback_rate_bps=0)
+
+        response = fair.buy()
+
+        assert response.status_code == 201
+        assert response.json()["status"] == "paid"
+        assert response.json()["fee_cents"] == 0
+
+    def test_fractions_of_a_cent_go_down(self):
+        # 5% de R$ 1,99 = 9,95 centavos -> 9; 2% = 3,98 -> 3
+        fair = Fair(price_cents=199, fee_rate_bps=500, cashback_rate_bps=200)
+
+        receipt = fair.buy().json()
+
+        assert (receipt["fee_cents"], receipt["cashback_cents"]) == (9, 3)
+
+    def test_purchase_too_small_for_a_fee_has_no_fee_charge(self):
+        fair = Fair(price_cents=1, fee_rate_bps=500, cashback_rate_bps=200)
+
+        response = fair.buy()
+
+        assert response.status_code == 201
+        assert response.json()["fee_cents"] == 0
+        audit = fair.as_organizer("GET", f"/events/{fair.event_id}/fee-charges").json()
+        assert audit["data"] == []
+
+    def test_resend_of_a_paid_purchase_does_not_charge_again(self):
+        fair = Fair(price_cents=4000, balance=5000)
+        key = f"app-{uuid.uuid4().hex}"
+
+        first = fair.buy(key=key)
+        second = fair.buy(key=key)
+
+        assert first.status_code == 201
+        assert second.status_code == 200
+        assert second.json()["status"] == "paid"
+        # se tivesse cobrado de novo, 5000 - 3920 = 1080 não pagaria outra de 4000
+        assert fair.buy().status_code == 409
