@@ -83,7 +83,7 @@ class TestListAccounts:
         holder = new_uuid()
         mine_in_one_event = Event().user_account(holder_id=holder)
         mine_in_another_event = Event().user_account(holder_id=holder)
-        Event().user_account()  # de outra pessoa
+        Event().user_account()
 
         response = payments.send("GET", "/accounts", headers=as_caller(holder))
 

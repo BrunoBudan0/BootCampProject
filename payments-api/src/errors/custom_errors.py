@@ -186,3 +186,46 @@ class PixAmountMismatch(QIException):
         description = f"Charged {charged_cents} cents but {paid_cents} cents were paid."
         translation = "O valor pago é diferente do valor cobrado."
         super().__init__(title, self.code, http_status, description, translation)
+
+class SourceIsNotAnAttendee(QIException):
+    code = "QIT002004"
+
+    def __init__(self) -> None:
+        title = "Source is not an attendee"
+        http_status = 403
+        description = "Only an attendee account can transfer balance."
+        translation = "Só a credencial do público pode transferir saldo."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class DestinationRefusesTransfers(QIException):
+    code = "QIT002027"
+
+    def __init__(self) -> None:
+        title = "Destination does not accept transfers"
+        http_status = 422
+        description = "Transfers can only reach another attendee account."
+        translation = "O destino não aceita transferência: só a credencial de outra pessoa recebe."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class AccountAlreadyExistsInEvent(QIException):
+    code = "QIT002036"
+
+    def __init__(self, event_id) -> None:
+        title = "Account already exists in event"
+        http_status = 409
+        description = f"Event {event_id} already has this account under another idempotency key."
+        translation = "O evento já tem esta conta, criada com outra chave."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class EventWithoutExternalAccount(QIException):
+    code = "QIT002037"
+
+    def __init__(self, event_id) -> None:
+        title = "Event without external account"
+        http_status = 409
+        description = f"Event {event_id} has no external account to receive money from outside."
+        translation = "O evento não tem a conta que recebe dinheiro de fora."
+        super().__init__(title, self.code, http_status, description, translation)

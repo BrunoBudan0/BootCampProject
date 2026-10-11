@@ -43,14 +43,14 @@ class TestBlock:
     def test_blocked_account_cannot_pay(self):
         event = Event()
         account = event.user_account(balance_cents=5000)
-        company = event.user_account()
+        stand = event.stand_account()
         block(account)
 
-        response = move([(account, company, 1000)])
+        response = move([(account, stand, 1000)])
 
         assert_error(response, 409, "QIT002022")
         assert balance(account) == 5000
-        assert balance(company) == 0
+        assert balance(stand) == 0
 
     def test_blocked_account_cannot_receive(self):
         event = Event()
@@ -66,11 +66,11 @@ class TestBlock:
     def test_unblocked_account_pays_again(self):
         event = Event()
         account = event.user_account(balance_cents=5000)
-        company = event.user_account()
+        stand = event.stand_account()
         block(account)
         block(account, blocked=False)
 
-        response = move([(account, company, 1000)])
+        response = move([(account, stand, 1000)])
 
         assert response.status_code == 201
         assert balance(account) == 4000

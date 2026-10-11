@@ -5,15 +5,17 @@ from sqlalchemy import text
 from database import Context
 from models import Account, Transaction
 
+
 class AccountRepository:
     def __init__(self, context: Context) -> None:
         self.session = context.db_session
 
-    def create_account(self, event_id, holder_id, kind, idempotency_key):
+    def create_account(self, event_id, holder_id, holder_type, kind, idempotency_key):
         account = Account(
             account_key=uuid4(),
             event_id=event_id,
             holder_id=holder_id,
+            holder_type=holder_type,
             kind=kind,
             idempotency_key=idempotency_key,
         )
@@ -51,7 +53,7 @@ class AccountRepository:
         )
 
     def get_system_account_of_event(self, event_id, kind):
-        return self.session.query(Account).filter_by(event_id=event_id, kind=kind).first()
+        return self.session.query(Account).filter_by(event_id=event_id, kind=kind).one_or_none()
 
     def lock_accounts_in_id_order(self, account_ids):
         self.session.execute(

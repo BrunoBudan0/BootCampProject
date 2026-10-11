@@ -11,8 +11,10 @@ from errors import (
 )
 from models import CriticalLogPayment, Transaction
 from repositories import AccountRepository, CriticalLogRepository, TransactionRepository
+from utils.integrity_error import violated_constraint_name
 
 BALANCE_CHECK_CONSTRAINT = "ck_account_user_balance"
+IDEMPOTENCY_CONSTRAINT = "uq_transaction_idempotency_leg"
 
 
 class MoneyMovingController(BaseController):
@@ -38,12 +40,9 @@ class MoneyMovingController(BaseController):
 
     def move_money(self, idempotency_key, payment_method, resolved_transfers):
         self.lock_accounts_of(resolved_transfers)
-        self.refuse_blocked_accounts(resolved_transfers)
 
         created_transactions = []
         for leg, (source_account, destination_account, amount_cents) in enumerate(resolved_transfers, start=1):
-            self.debit_or_refuse(source_account, amount_cents)
-            self.account_repository.credit(destination_account, amount_cents)
             created_transactions.append(
                 self.transaction_repository.create_transaction(
                     idempotency_key=idempotency_key,
@@ -55,6 +54,11 @@ class MoneyMovingController(BaseController):
                     status=Transaction.SETTLED_STATUS,
                 )
             )
+
+        self.refuse_blocked_accounts(resolved_transfers)
+        for source_account, destination_account, amount_cents in resolved_transfers:
+            self.debit_or_refuse(source_account, amount_cents)
+            self.account_repository.credit(destination_account, amount_cents)
 
         return created_transactions
 
@@ -77,7 +81,7 @@ class MoneyMovingController(BaseController):
         try:
             new_balance = self.account_repository.debit_if_balance_allows(account, amount_cents)
         except IntegrityError as integrity_error:
-            if BALANCE_CHECK_CONSTRAINT in str(integrity_error.orig):
+            if violated_constraint_name(integrity_error) == BALANCE_CHECK_CONSTRAINT:
                 self.session.rollback()
                 self.critical_log_repository.record(
                     CriticalLogPayment.BALANCE_CHECK_TRIGGERED,
@@ -91,6 +95,9 @@ class MoneyMovingController(BaseController):
             raise InsufficientBalance(amount_cents)
 
     def transactions_already_recorded_after_race(self, integrity_error, idempotency_key):
+        if violated_constraint_name(integrity_error) != IDEMPOTENCY_CONSTRAINT:
+            raise integrity_error
+
         self.session.rollback()
         recorded_transactions = self.transaction_repository.list_transactions_by_idempotency_key(idempotency_key)
         if not recorded_transactions:

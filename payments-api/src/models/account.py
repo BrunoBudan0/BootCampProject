@@ -8,8 +8,9 @@ class Account(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     account_key = Column(UUID(as_uuid=True), nullable=False)
-    event_id = Column(UUID(as_uuid=True), nullable=False)  # REF: API de Eventos
-    holder_id = Column(UUID(as_uuid=True), nullable=True)  # REF: API de Usuários; NULL em fee e external
+    event_id = Column(UUID(as_uuid=True), nullable=False)
+    holder_id = Column(UUID(as_uuid=True), nullable=True)
+    holder_type = Column(String(10), nullable=True)
     kind = Column(String(10), nullable=False)
     balance_cents = Column(BigInteger, nullable=False, default=0)
     blocked = Column(Boolean, nullable=False, default=False)
@@ -24,3 +25,6 @@ class Account(Base):
     USER_KIND = "user"
     FEE_KIND = "fee"
     EXTERNAL_KIND = "external"
+
+    ATTENDEE_HOLDER = "attendee"
+    COMPANY_HOLDER = "company"

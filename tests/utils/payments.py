@@ -17,8 +17,12 @@ vermelho por esse motivo: é o TDD mostrando a ordem de implementar.
 O CONTRATO QUE ESTES TESTES ESPERAM (é a RFC, com os detalhes que ela
 deixava em aberto já decididos)
 ─────────────────────────────────────────────────────────────────────
-Conta:      {id, event_id, holder_id, kind, balance_cents, blocked, created_at}
-            holder_id é null nas contas do sistema (fee e external).
+Conta:      {id, event_id, holder_id, holder_type, kind, balance_cents,
+             blocked, created_at}
+            holder_type é attendee (credencial) ou company (stand) nas
+            contas user, e null nas contas do sistema (fee e external),
+            que também não têm holder_id. Uma conta de cada tipo por
+            evento, e uma conta por dono por evento.
 Transação:  {id, idempotency_key, leg, source_account_id,
              destination_account_id, amount_cents, payment_method, status,
              reverses_transaction_id, created_at}
@@ -28,7 +32,10 @@ Lote:       POST /internal/transactions e /internal/reversals respondem
 Erro:       {title, description, translation, code} (R3)
 Todo id que sai é UUID (R5). Recurso que não é de quem chama responde
 404 igual ao inexistente (R8). Valor <= 0 em qualquer rota de dinheiro
-é 422 QIT002028; valor que não é inteiro é 400 (schema).
+é 422 QIT002028; valor que não é inteiro ou passa de 10000000 centavos
+é 400 (schema). A chave de idempotência das rotas públicas (/transfers e
+/recharges) é um UUID; as chaves de Eventos (purchase:, refund:, cash:)
+só valem nas rotas internas.
 """
 
 import hashlib
@@ -36,6 +43,7 @@ import hmac
 import json
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from tests.utils.services import payments
 
@@ -126,8 +134,18 @@ def _setup_ok(response, what: str) -> dict:
 # Rotas, chamadas do jeito que a API de Eventos e o Gateway chamariam
 # ─────────────────────────────────────────────────────────────────────
 
-def create_account(event_id: str, kind: str = "user", holder_id: str = None, idempotency_key: str = None) -> dict:
-    """POST /internal/accounts, como a API de Eventos faria. Devolve a conta."""
+ATTENDEE_HOLDER = "attendee"
+COMPANY_HOLDER = "company"
+MAXIMUM_AMOUNT_CENTS = 10_000_000
+
+
+def create_account(
+    event_id: str,
+    kind: str = "user",
+    holder_id: str = None,
+    idempotency_key: str = None,
+    holder_type: str = ATTENDEE_HOLDER,
+) -> dict:
     payload = {
         "event_id": event_id,
         "kind": kind,
@@ -136,10 +154,11 @@ def create_account(event_id: str, kind: str = "user", holder_id: str = None, ide
 
     if kind == "user":
         payload["holder_id"] = holder_id or new_uuid()
+        payload["holder_type"] = holder_type
 
     response = payments.send("POST", "/internal/accounts", json=payload)
 
-    return _setup_ok(response, f"POST /internal/accounts (kind={kind})")
+    return _setup_ok(response, f"POST /internal/accounts (kind={kind}, holder_type={holder_type})")
 
 
 def move(transfers: list, payment_method: str = "balance", idempotency_key: str = None):
@@ -164,8 +183,30 @@ def move(transfers: list, payment_method: str = "balance", idempotency_key: str 
     return payments.send("POST", "/internal/transactions", json=payload)
 
 
+def transfer(source, destination, amount_cents, idempotency_key=None, caller=None):
+    payload = {
+        "source_account_id": source["id"],
+        "destination_account_id": destination["id"],
+        "amount_cents": amount_cents,
+        "idempotency_key": idempotency_key or new_uuid(),
+    }
+
+    return payments.send("POST", "/transfers", json=payload, headers=as_caller(caller or source["holder_id"]))
+
+
+def recharge(account, payment_method, amount_cents, idempotency_key=None, caller=None, **extra_fields):
+    payload = {
+        "account_id": account["id"],
+        "payment_method": payment_method,
+        "amount_cents": amount_cents,
+        "idempotency_key": idempotency_key or new_uuid(),
+    }
+    payload.update(extra_fields)
+
+    return payments.send("POST", "/recharges", json=payload, headers=as_caller(caller or account["holder_id"]))
+
+
 def get_account(account: dict, caller: str = None):
-    """GET /accounts/{id} pelo Gateway, em nome do dono (ou de `caller`)."""
     return payments.send(
         "GET",
         f"/accounts/{account['id']}",
@@ -174,7 +215,6 @@ def get_account(account: dict, caller: str = None):
 
 
 def balance(account: dict) -> int:
-    """O saldo de uma conta de usuário, perguntado pelo dono."""
     return _setup_ok(get_account(account), "GET /accounts/{id}")["balance_cents"]
 
 
@@ -183,7 +223,6 @@ def get_transaction(transaction_id: str, caller: str):
 
 
 def statement(account: dict, caller: str = None, **params):
-    """GET /accounts/{id}/statement pelo Gateway, em nome do dono."""
     return payments.send(
         "GET",
         f"/accounts/{account['id']}/statement",
@@ -207,15 +246,26 @@ def reverse(original_idempotency_key: str, idempotency_key: str = None):
     )
 
 
-def pix_webhook(transaction_id: str, status: str, amount_cents: int, secret: str = PIX_WEBHOOK_SECRET):
+def pix_webhook(
+    transaction_id: str, status: str, amount_cents: int, secret: str = PIX_WEBHOOK_SECRET, reference: str = None
+):
     """PUT /webhooks/pix/{id}, como o provedor de Pix chamaria (pelo Gateway).
 
     A assinatura é um HMAC-SHA256, em hexadecimal, dos bytes EXATOS do
     corpo, com o segredo combinado com o provedor. Vai no cabeçalho
     X-Pix-Signature. Por isso o corpo vai cru (`data`), e não como `json`:
     assinar um texto e mandar outro quebraria a conta.
+
+    O corpo carrega a `reference` que Pagamentos mandou ao criar a cobrança
+    (o id da transação): é ela que amarra o aviso assinado a UMA cobrança.
     """
-    body = json.dumps({"status": status, "amount_cents": amount_cents}).encode("utf-8")
+    notice = {"status": status, "amount_cents": amount_cents, "reference": reference or transaction_id}
+
+    return send_signed_pix_notice(transaction_id, notice, secret)
+
+
+def send_signed_pix_notice(transaction_id: str, notice: dict, secret: str = PIX_WEBHOOK_SECRET):
+    body = json.dumps(notice).encode("utf-8")
     signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
     return payments.send(
@@ -224,6 +274,12 @@ def pix_webhook(transaction_id: str, status: str, amount_cents: int, secret: str
         data=body,
         headers={"Content-Type": "application/json", "X-Pix-Signature": signature},
     )
+
+
+def fire_together(request_function, times: int) -> list:
+    with ThreadPoolExecutor(max_workers=times) as pool:
+        futures = [pool.submit(request_function) for _ in range(times)]
+        return [future.result() for future in futures]
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -239,12 +295,14 @@ class Event:
         self.fee = create_account(self.id, kind="fee")
 
     def user_account(self, balance_cents: int = 0, holder_id: str = None) -> dict:
-        """Uma conta de usuário neste evento, já com saldo.
+        return self._funded_account(ATTENDEE_HOLDER, balance_cents, holder_id)
 
-        O saldo entra como a recarga em dinheiro: da conta external para a
-        conta, método cash.
-        """
-        account = create_account(self.id, holder_id=holder_id)
+    def stand_account(self, balance_cents: int = 0, holder_id: str = None) -> dict:
+        return self._funded_account(COMPANY_HOLDER, balance_cents, holder_id)
+
+    def _funded_account(self, holder_type: str, balance_cents: int, holder_id: str) -> dict:
+        """O saldo entra como a recarga em dinheiro: da external para a conta, método cash."""
+        account = create_account(self.id, holder_id=holder_id, holder_type=holder_type)
 
         if balance_cents > 0:
             _setup_ok(
@@ -273,15 +331,11 @@ class Event:
 
         raise AssertionError(f"a conta {account['id']} não aparece na conciliação do evento {self.id}")
 
-    def purchase(self, buyer: dict, company: dict, total: int = 4000, fee: int = 200, cashback: int = 80):
-        """As três transações de uma compra, como a API de Eventos pede.
-
-        Público paga a empresa, empresa paga a tarifa, a conta fee devolve
-        o cashback. Devolve (chave, resposta).
-        """
+    def purchase(self, buyer: dict, stand: dict, total: int = 4000, fee: int = 200, cashback: int = 80):
+        """Público paga o stand, o stand paga a tarifa, a conta fee devolve o cashback."""
         key = new_key("purchase")
         response = move(
-            [(buyer, company, total), (company, self.fee, fee), (self.fee, buyer, cashback)],
+            [(buyer, stand, total), (stand, self.fee, fee), (self.fee, buyer, cashback)],
             idempotency_key=key,
         )
 

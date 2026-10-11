@@ -5,10 +5,12 @@ token de Pagamentos. A conta nasce com saldo zero, e a chave de
 idempotência garante que a mesma credencial ou o mesmo stand não ganhem
 duas contas.
 
-Corpo:     event_id, kind (user | fee | external), holder_id (obrigatório
-           em user, proibido em fee e external), idempotency_key
+Corpo:     event_id, kind (user | fee | external), idempotency_key,
+           holder_id e holder_type (attendee | company), os dois
+           obrigatórios em user e proibidos em fee e external
 Respostas: 201 a conta · 200 a mesma conta (mesma chave) · 400 QIT000001
            · 403 QIT000002 · 409 QIT002025 (mesma chave, outro conteúdo)
+           · 409 QIT002036 (o evento já tem essa conta, com outra chave)
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -18,13 +20,19 @@ from tests.utils.services import payments, users
 
 
 def new_account(**changes):
-    """Um pedido válido, com UUIDs novos: cada teste vive no próprio mundo."""
     payload = {
         "event_id": new_uuid(),
         "holder_id": new_uuid(),
+        "holder_type": "attendee",
         "kind": "user",
         "idempotency_key": new_key("account"),
     }
+    payload.update(changes)
+    return payload
+
+
+def new_system_account(kind, **changes):
+    payload = {"event_id": new_uuid(), "kind": kind, "idempotency_key": new_key("account")}
     payload.update(changes)
     return payload
 
@@ -41,25 +49,30 @@ class TestCreateAccount:
 
         assert response.status_code == 201
         account = response.json()
-        assert is_uuid(account["id"])  # R5: nunca o número do banco
+        assert is_uuid(account["id"])
         assert account["event_id"] == payload["event_id"]
         assert account["holder_id"] == payload["holder_id"]
+        assert account["holder_type"] == "attendee"
         assert account["kind"] == "user"
         assert account["balance_cents"] == 0
         assert account["blocked"] is False
+
+    def test_creates_stand_account_for_a_company(self):
+        response = create(new_account(holder_type="company"))
+
+        assert response.status_code == 201
+        assert response.json()["holder_type"] == "company"
 
     def test_creates_system_accounts_without_holder(self):
         event_id = new_uuid()
 
         for kind in ("fee", "external"):
-            payload = new_account(event_id=event_id, kind=kind)
-            del payload["holder_id"]
-
-            response = create(payload)
+            response = create(new_system_account(kind, event_id=event_id))
 
             assert response.status_code == 201, f"{kind}: {response.text}"
             assert response.json()["kind"] == kind
             assert response.json()["holder_id"] is None
+            assert response.json()["holder_type"] is None
             assert response.json()["balance_cents"] == 0
 
     def test_same_key_returns_the_same_account(self):
@@ -87,17 +100,57 @@ class TestCreateAccount:
 
         assert_error(response, 409, "QIT002025")
 
+    def test_same_key_with_other_holder_type_is_refused(self):
+        payload = new_account()
+        create(payload)
+
+        response = create({**payload, "holder_type": "company"})
+
+        assert_error(response, 409, "QIT002025")
+
+
+class TestOneAccountPerOwnerAndKindInEachEvent:
+    def test_second_fee_account_in_the_same_event_is_refused(self):
+        first = new_system_account("fee")
+        create(first)
+
+        response = create(new_system_account("fee", event_id=first["event_id"]))
+
+        assert_error(response, 409, "QIT002036")
+
+    def test_second_external_account_in_the_same_event_is_refused(self):
+        first = new_system_account("external")
+        create(first)
+
+        response = create(new_system_account("external", event_id=first["event_id"]))
+
+        assert_error(response, 409, "QIT002036")
+
+    def test_same_holder_cannot_get_two_accounts_in_the_same_event(self):
+        first = new_account()
+        create(first)
+
+        response = create(new_account(event_id=first["event_id"], holder_id=first["holder_id"]))
+
+        assert_error(response, 409, "QIT002036")
+
+    def test_same_holder_gets_one_account_in_each_event(self):
+        holder_id = new_uuid()
+
+        first = create(new_account(holder_id=holder_id))
+        second = create(new_account(holder_id=holder_id))
+
+        assert first.status_code == second.status_code == 201
+
 
 class TestCreateAccountConcurrency:
     def test_parallel_requests_with_the_same_key_create_one_account(self):
-        """A API de Eventos reenviou o mesmo pedido várias vezes ao mesmo tempo.
+        """É o único teste que passa pelo caminho do IntegrityError da conta.
 
-        É o único teste que passa pelo caminho do IntegrityError: as
-        requisições atravessam juntas a consulta prévia ("já existe conta
+        As requisições atravessam juntas a consulta prévia ("já existe conta
         com esta chave?"), todas respondem "não", e quem fecha a janela é o
-        UNIQUE do banco. A que perde a corrida tem de responder como replay
-        (200, a mesma conta) — nunca 500 e nunca 409, porque o pedido é o
-        mesmo.
+        UNIQUE do banco. A que perde a corrida responde como replay (200, a
+        mesma conta) — nunca 500 e nunca 409, porque o pedido é o mesmo.
         """
         payload = new_account()
 
@@ -120,8 +173,20 @@ class TestCreateAccountRefusals:
 
         assert_error(create(payload), 400, "QIT000001")
 
+    def test_user_account_without_holder_type_is_refused(self):
+        payload = new_account()
+        del payload["holder_type"]
+
+        assert_error(create(payload), 400, "QIT000001")
+
+    def test_unknown_holder_type_is_refused(self):
+        assert_error(create(new_account(holder_type="organizer")), 400, "QIT000001")
+
     def test_system_account_with_holder_is_refused(self):
-        assert_error(create(new_account(kind="fee")), 400, "QIT000001")
+        assert_error(create(new_system_account("fee", holder_id=new_uuid())), 400, "QIT000001")
+
+    def test_system_account_with_holder_type_is_refused(self):
+        assert_error(create(new_system_account("external", holder_type="company")), 400, "QIT000001")
 
     def test_missing_event_is_refused(self):
         payload = new_account()

@@ -20,10 +20,9 @@ class TransactionRepository:
         payment_method,
         status,
         reversed_transaction=None,
-        transaction_key=None,
     ):
         transaction = Transaction(
-            transaction_key=transaction_key or uuid4(),
+            transaction_key=uuid4(),
             idempotency_key=idempotency_key,
             leg=leg,
             source_account_id=source_account.id,
@@ -50,6 +49,9 @@ class TransactionRepository:
     def get_transaction_by_key(self, transaction_key):
         return self.session.query(Transaction).filter_by(transaction_key=transaction_key).first()
 
+    def reload_transaction(self, transaction):
+        return self.session.query(Transaction).filter_by(id=transaction.id).populate_existing().one()
+
     def change_status_if_current(self, transaction, current_status, new_status):
         changed_rows = self.session.execute(
             text("UPDATE transaction SET status = :new_status WHERE id = :transaction_id AND status = :current_status"),
@@ -59,30 +61,30 @@ class TransactionRepository:
 
         return changed_rows == 1
 
-    def statement_page(self, account, date_from, date_to, limit, offset):
+    def statement_page(self, account, settled_from, settled_before, limit, offset):
         return self.session.execute(
             text(
-                "SELECT transaction_key, payment_method, status, created_at, signed_amount, balance_after "
+                "SELECT transaction_key, payment_method, status, created_at, settled_at, signed_amount, balance_after "
                 "FROM ("
-                "  SELECT id, transaction_key, payment_method, status, created_at,"
+                "  SELECT id, transaction_key, payment_method, status, created_at, settled_at,"
                 "         CASE WHEN destination_account_id = :account_id THEN amount_cents ELSE -amount_cents END"
                 "           AS signed_amount,"
                 "         CAST(SUM(CASE WHEN destination_account_id = :account_id THEN amount_cents ELSE -amount_cents END)"
-                "              OVER (ORDER BY created_at, id) AS BIGINT) AS balance_after"
+                "              OVER (ORDER BY settled_at, id) AS BIGINT) AS balance_after"
                 "  FROM transaction"
                 "  WHERE (source_account_id = :account_id OR destination_account_id = :account_id)"
                 "    AND status = ANY(:moved)"
                 ") AS lines "
-                "WHERE (CAST(:date_from AS TIMESTAMPTZ) IS NULL OR created_at >= CAST(:date_from AS TIMESTAMPTZ)) "
-                "  AND (CAST(:date_to AS TIMESTAMPTZ) IS NULL OR created_at <= CAST(:date_to AS TIMESTAMPTZ)) "
-                "ORDER BY created_at DESC, id DESC "
+                "WHERE (CAST(:settled_from AS TIMESTAMPTZ) IS NULL OR settled_at >= CAST(:settled_from AS TIMESTAMPTZ)) "
+                "  AND (CAST(:settled_before AS TIMESTAMPTZ) IS NULL OR settled_at < CAST(:settled_before AS TIMESTAMPTZ)) "
+                "ORDER BY settled_at DESC, id DESC "
                 "LIMIT :limit OFFSET :offset"
             ),
             {
                 "account_id": account.id,
                 "moved": list(Transaction.STATUSES_THAT_MOVED_MONEY),
-                "date_from": date_from,
-                "date_to": date_to,
+                "settled_from": settled_from,
+                "settled_before": settled_before,
                 "limit": limit,
                 "offset": offset,
             },

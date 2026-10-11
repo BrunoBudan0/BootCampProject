@@ -4,7 +4,8 @@ Quem chama é a API de Eventos (compra e recarga em dinheiro). Uma ou
 mais transferências executam JUNTAS, na ordem enviada: todas ou nenhuma.
 
 Corpo:     idempotency_key, payment_method (balance | card | pix | cash),
-           transfers: [{source_account_id, destination_account_id, amount_cents}]
+           transfers: [{source_account_id, destination_account_id,
+           amount_cents (até 10000000)}]
 Respostas: 201 {idempotency_key, transactions} · 200 replay · 400 QIT000001
            · 404 QIT002020 conta inexistente · 409 QIT002021 saldo
            · 409 QIT002022 bloqueada · 409 QIT002025 chave com outro conteúdo
@@ -15,7 +16,7 @@ A regra que nenhum teste daqui pode ver quebrar: conta de usuário nunca
 fica negativa, e numa recusa NADA se move.
 """
 
-from tests.utils.payments import Event, assert_error, balance, is_uuid, move, new_key, new_uuid
+from tests.utils.payments import MAXIMUM_AMOUNT_CENTS, Event, assert_error, balance, is_uuid, move, new_key, new_uuid
 from tests.utils.services import payments
 
 
@@ -41,33 +42,33 @@ class TestMovesMoney:
         assert balance(account) == 5000
 
     def test_external_account_goes_negative_on_purpose(self):
+        """O módulo da external é quanto dinheiro entrou de fora."""
         event = Event()
         event.user_account(balance_cents=5000)
 
-        # O módulo da external é quanto dinheiro entrou de fora.
         assert event.balance_of(event.external) == -5000
 
     def test_purchase_moves_price_fee_and_cashback(self):
         """O exemplo da RFC: compra de R$ 40, tarifa de 5%, cashback de 2%."""
         event = Event()
         buyer = event.user_account(balance_cents=5000)
-        company = event.user_account()
+        stand = event.stand_account()
 
-        key, response = event.purchase(buyer, company, total=4000, fee=200, cashback=80)
+        key, response = event.purchase(buyer, stand, total=4000, fee=200, cashback=80)
 
         assert response.status_code == 201
         assert response.json()["idempotency_key"] == key
         legs = [transaction["leg"] for transaction in response.json()["transactions"]]
         assert legs == [1, 2, 3]
         assert balance(buyer) == 5000 - 4000 + 80
-        assert balance(company) == 4000 - 200
+        assert balance(stand) == 4000 - 200
         assert event.balance_of(event.fee) == 200 - 80
 
     def test_event_still_sums_to_zero_after_a_purchase(self):
         event = Event()
         buyer = event.user_account(balance_cents=5000)
-        company = event.user_account()
-        event.purchase(buyer, company)
+        stand = event.stand_account()
+        event.purchase(buyer, stand)
 
         reconciliation = event.reconciliation()
 
@@ -79,25 +80,25 @@ class TestRefusesWithoutMovingAnything:
     def test_insufficient_balance(self):
         event = Event()
         buyer = event.user_account(balance_cents=1000)
-        company = event.user_account()
+        stand = event.stand_account()
 
-        response = move([(buyer, company, 4000)])
+        response = move([(buyer, stand, 4000)])
 
         assert_error(response, 409, "QIT002021")
         assert balance(buyer) == 1000
-        assert balance(company) == 0
+        assert balance(stand) == 0
 
     def test_all_or_nothing(self):
         """A primeira transferência caberia; a segunda não. Nenhuma acontece."""
         event = Event()
         buyer = event.user_account(balance_cents=5000)
-        company = event.user_account()
+        stand = event.stand_account()
 
-        response = move([(buyer, company, 4000), (buyer, company, 2000)])
+        response = move([(buyer, stand, 4000), (buyer, stand, 2000)])
 
         assert_error(response, 409, "QIT002021")
         assert balance(buyer) == 5000
-        assert balance(company) == 0
+        assert balance(stand) == 0
 
     def test_missing_source_account(self):
         account = Event().user_account()
@@ -144,6 +145,15 @@ class TestRefusesWithoutMovingAnything:
         assert_error(response, 422, "QIT002028")
         assert balance(receiver) == 1000
 
+    def test_amount_above_the_ceiling(self):
+        event = Event()
+        account = event.user_account(balance_cents=1000)
+
+        response = move([(account, event.user_account(), MAXIMUM_AMOUNT_CENTS + 1)])
+
+        assert_error(response, 400, "QIT000001")
+        assert balance(account) == 1000
+
     def test_amount_must_be_an_integer(self):
         event = Event()
         account = event.user_account(balance_cents=1000)
@@ -182,26 +192,26 @@ class TestIdempotency:
     def test_same_key_and_content_replays_without_moving_again(self):
         event = Event()
         buyer = event.user_account(balance_cents=5000)
-        company = event.user_account()
+        stand = event.stand_account()
         key = new_key("purchase")
 
-        first = move([(buyer, company, 3000)], idempotency_key=key)
-        second = move([(buyer, company, 3000)], idempotency_key=key)
+        first = move([(buyer, stand, 3000)], idempotency_key=key)
+        second = move([(buyer, stand, 3000)], idempotency_key=key)
 
         assert first.status_code == 201
         assert second.status_code == 200
         assert second.json() == first.json()
         assert balance(buyer) == 2000
-        assert balance(company) == 3000
+        assert balance(stand) == 3000
 
     def test_same_key_with_other_content_is_refused(self):
         event = Event()
         buyer = event.user_account(balance_cents=5000)
-        company = event.user_account()
+        stand = event.stand_account()
         key = new_key("purchase")
-        move([(buyer, company, 3000)], idempotency_key=key)
+        move([(buyer, stand, 3000)], idempotency_key=key)
 
-        response = move([(buyer, company, 1000)], idempotency_key=key)
+        response = move([(buyer, stand, 1000)], idempotency_key=key)
 
         assert_error(response, 409, "QIT002025")
         assert balance(buyer) == 2000
@@ -223,17 +233,16 @@ class TestIdempotency:
         assert balance(payer_two) == 1000
 
     def test_refused_request_leaves_no_trace_and_can_be_retried(self):
-        """Recusa não grava nada: a mesma chave, depois que o saldo chegou, executa."""
         event = Event()
         buyer = event.user_account(balance_cents=1000)
-        company = event.user_account()
+        stand = event.stand_account()
         key = new_key("purchase")
 
-        refused = move([(buyer, company, 3000)], idempotency_key=key)
+        refused = move([(buyer, stand, 3000)], idempotency_key=key)
         move([(event.external, buyer, 2000)], payment_method="cash")
-        retried = move([(buyer, company, 3000)], idempotency_key=key)
+        retried = move([(buyer, stand, 3000)], idempotency_key=key)
 
         assert_error(refused, 409, "QIT002021")
         assert retried.status_code == 201
         assert balance(buyer) == 0
-        assert balance(company) == 3000
+        assert balance(stand) == 3000

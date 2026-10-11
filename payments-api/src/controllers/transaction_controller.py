@@ -1,17 +1,28 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import IntegrityError
 
 from controllers.account_controller import parse_uuid_or_none
-from controllers.money_moving_controller import MoneyMovingController
+from controllers.money_moving_controller import IDEMPOTENCY_CONSTRAINT, MoneyMovingController
 from dtos import TransactionDTO
 from errors import (
     AlreadyReversed,
+    DestinationRefusesTransfers,
     IdempotencyKeyConflict,
     InvalidParameter,
+    InvalidSchema,
     NotFoundTransaction,
+    SourceIsNotAnAttendee,
 )
 from models import Account, Transaction
+from utils.integrity_error import violated_constraint_name
+
+REVERSAL_CONSTRAINT = "uq_transaction_reversal"
+REVERSAL_RACE_CONSTRAINTS = (IDEMPOTENCY_CONSTRAINT, REVERSAL_CONSTRAINT)
+SAO_PAULO_TIMEZONE = ZoneInfo("America/Sao_Paulo")
+DATE_AND_TIME_SEPARATOR = "T"
+SMALLEST_STORED_TIME_STEP = timedelta(microseconds=1)
 
 
 class TransactionController(MoneyMovingController):
@@ -51,6 +62,9 @@ class TransactionController(MoneyMovingController):
 
     def transfer_for_caller(self, payload: dict) -> tuple:
         source_account = self.account_controller.find_account_owned_by_caller(payload["source_account_id"])
+        if source_account.holder_type != Account.ATTENDEE_HOLDER:
+            raise SourceIsNotAnAttendee()
+
         idempotency_key = payload["idempotency_key"]
 
         recorded_transactions = self.transaction_repository.list_transactions_by_idempotency_key(idempotency_key)
@@ -62,6 +76,8 @@ class TransactionController(MoneyMovingController):
         destination_account = self.account_controller.find_account_or_fail(payload["destination_account_id"])
         resolved_transfers = [(source_account, destination_account, amount_cents)]
         self.refuse_invalid_transfers(resolved_transfers)
+        if destination_account.holder_type != Account.ATTENDEE_HOLDER:
+            raise DestinationRefusesTransfers()
 
         try:
             created_transactions = self.move_money(idempotency_key, Transaction.BALANCE_METHOD, resolved_transfers)
@@ -78,13 +94,13 @@ class TransactionController(MoneyMovingController):
         original_idempotency_key = payload["original_idempotency_key"]
         reversal_idempotency_key = payload["idempotency_key"]
 
-        recorded_reversals = self.transaction_repository.list_transactions_by_idempotency_key(reversal_idempotency_key)
-        if recorded_reversals:
-            return self._replay_reversal(recorded_reversals, original_idempotency_key), False
-
         original_transactions = self.transaction_repository.list_transactions_by_idempotency_key(original_idempotency_key)
         if not original_transactions:
             raise NotFoundTransaction(original_idempotency_key)
+
+        recorded_reversals = self.transaction_repository.list_transactions_by_idempotency_key(reversal_idempotency_key)
+        if recorded_reversals:
+            return self._replay_reversal(recorded_reversals, original_idempotency_key), False
 
         if any(original.status != Transaction.SETTLED_STATUS for original in original_transactions):
             raise AlreadyReversed(original_idempotency_key)
@@ -96,7 +112,9 @@ class TransactionController(MoneyMovingController):
 
         try:
             created_reversals = self._create_reversals(reversal_order, reversal_idempotency_key, original_idempotency_key)
-        except IntegrityError:
+        except IntegrityError as integrity_error:
+            if violated_constraint_name(integrity_error) not in REVERSAL_RACE_CONSTRAINTS:
+                raise
             self.session.rollback()
             recorded_reversals = self.transaction_repository.list_transactions_by_idempotency_key(reversal_idempotency_key)
             if not recorded_reversals:
@@ -127,11 +145,13 @@ class TransactionController(MoneyMovingController):
 
     def statement_for_caller(self, account_id: str, limit: int, page: int, raw_date_from, raw_date_to) -> dict:
         account = self.account_controller.find_account_owned_by_caller(account_id)
-        date_from = parse_query_datetime(raw_date_from, "date_from")
-        date_to = parse_query_datetime(raw_date_to, "date_to")
+        settled_from = start_of_period(raw_date_from)
+        settled_before = end_of_period_exclusive(raw_date_to)
+        if settled_from is not None and settled_before is not None and settled_from >= settled_before:
+            raise InvalidSchema("date_from must not be after date_to")
 
         statement_lines = self.transaction_repository.statement_page(
-            account, date_from, date_to, limit=limit + 1, offset=page * limit
+            account, settled_from, settled_before, limit=limit + 1, offset=page * limit
         )
         is_last_page = len(statement_lines) <= limit
 
@@ -145,15 +165,6 @@ class TransactionController(MoneyMovingController):
 
         created_reversals = []
         for leg, original in enumerate(reversal_order, start=1):
-            original_was_settled = self.transaction_repository.change_status_if_current(
-                original, Transaction.SETTLED_STATUS, Transaction.REVERSED_STATUS
-            )
-            if not original_was_settled:
-                self.session.rollback()
-                raise AlreadyReversed(original_idempotency_key)
-
-            self.debit_or_refuse(original.destination_account, original.amount_cents)
-            self.account_repository.credit(original.source_account, original.amount_cents)
             created_reversals.append(
                 self.transaction_repository.create_transaction(
                     idempotency_key=reversal_idempotency_key,
@@ -166,6 +177,18 @@ class TransactionController(MoneyMovingController):
                     reversed_transaction=original,
                 )
             )
+
+        for original in reversal_order:
+            original_was_settled = self.transaction_repository.change_status_if_current(
+                original, Transaction.SETTLED_STATUS, Transaction.REVERSED_STATUS
+            )
+            if not original_was_settled:
+                self.session.rollback()
+                raise AlreadyReversed(original_idempotency_key)
+
+        for source_account, destination_account, amount_cents in resolved_reversals:
+            self.debit_or_refuse(source_account, amount_cents)
+            self.account_repository.credit(destination_account, amount_cents)
 
         return created_reversals
 
@@ -212,16 +235,44 @@ class TransactionController(MoneyMovingController):
         return TransactionDTO.batch_to_dict(recorded_reversals[0].idempotency_key, recorded_reversals)
 
 
-def parse_query_datetime(raw_value, parameter_name):
-    if raw_value is None:
+def start_of_period(raw_date_from):
+    if raw_date_from is None:
         return None
 
+    if DATE_AND_TIME_SEPARATOR not in raw_date_from:
+        return midnight_in_sao_paulo(parse_query_date(raw_date_from, "date_from"))
+
+    return parse_query_moment(raw_date_from, "date_from")
+
+
+def end_of_period_exclusive(raw_date_to):
+    if raw_date_to is None:
+        return None
+
+    if DATE_AND_TIME_SEPARATOR not in raw_date_to:
+        return midnight_in_sao_paulo(parse_query_date(raw_date_to, "date_to") + timedelta(days=1))
+
+    return parse_query_moment(raw_date_to, "date_to") + SMALLEST_STORED_TIME_STEP
+
+
+def midnight_in_sao_paulo(day: date) -> datetime:
+    return datetime.combine(day, time.min, tzinfo=SAO_PAULO_TIMEZONE)
+
+
+def parse_query_date(raw_value, parameter_name) -> date:
+    try:
+        return date.fromisoformat(raw_value)
+    except ValueError:
+        raise InvalidParameter(f"{parameter_name} is not a valid date")
+
+
+def parse_query_moment(raw_value, parameter_name) -> datetime:
     try:
         parsed = datetime.fromisoformat(raw_value)
     except ValueError:
         raise InvalidParameter(f"{parameter_name} is not a valid date")
 
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
+        return parsed.replace(tzinfo=SAO_PAULO_TIMEZONE)
 
     return parsed

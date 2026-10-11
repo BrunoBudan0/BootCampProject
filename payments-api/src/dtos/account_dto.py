@@ -5,6 +5,7 @@ class AccountDTO:
             "id": str(account.account_key),
             "event_id": str(account.event_id),
             "holder_id": str(account.holder_id) if account.holder_id else None,
+            "holder_type": account.holder_type,
             "kind": account.kind,
             "balance_cents": account.balance_cents,
             "blocked": account.blocked,
