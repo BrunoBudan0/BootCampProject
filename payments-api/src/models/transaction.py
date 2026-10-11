@@ -19,11 +19,10 @@ class Transaction(Base):
     reverses_transaction_id = Column(BigInteger, ForeignKey("transaction.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    settled_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("transaction_key", name="uq_transaction_key"),
-        # Uma compra são várias linhas com a MESMA chave (leg 1, 2, 3):
-        # o que é único é o par, nunca a chave ou a leg sozinhas.
         UniqueConstraint("idempotency_key", "leg", name="uq_transaction_idempotency_leg"),
         UniqueConstraint("reverses_transaction_id", name="uq_transaction_reversal"),
     )

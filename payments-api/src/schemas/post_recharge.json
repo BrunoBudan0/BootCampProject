@@ -4,9 +4,9 @@
   "properties": {
     "account_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
     "payment_method": { "enum": ["card", "pix"] },
-    "amount_cents": { "type": "integer" },
+    "amount_cents": { "type": "integer", "maximum": 10000000 },
     "card_token": { "type": "string", "minLength": 1, "maxLength": 255 },
-    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 80 }
+    "idempotency_key": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" }
   },
   "required": ["account_id", "payment_method", "amount_cents", "idempotency_key"],
   "additionalProperties": false,

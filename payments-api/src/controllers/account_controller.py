@@ -4,8 +4,12 @@ from sqlalchemy.exc import IntegrityError
 
 from controllers.base_controller import BaseController
 from dtos import AccountDTO
-from errors import IdempotencyKeyConflict, InvalidParameter, NotFoundAccount
+from errors import AccountAlreadyExistsInEvent, IdempotencyKeyConflict, InvalidParameter, NotFoundAccount
 from repositories import AccountRepository
+from utils.integrity_error import violated_constraint_name
+
+ONE_ACCOUNT_PER_EVENT_CONSTRAINTS = ("uq_account_system_kind_per_event", "uq_account_holder_per_event")
+
 
 class AccountController(BaseController):
     def __init__(self) -> None:
@@ -13,29 +17,32 @@ class AccountController(BaseController):
         self.account_repository = AccountRepository(self.context)
 
     def existing_key_account(self, idempotency_key: str):
-            return self.account_repository.get_account_by_idempotency_key(idempotency_key)
+        return self.account_repository.get_account_by_idempotency_key(idempotency_key)
 
     def create_account(self, payload: dict) -> tuple:
         idempotency_key = payload["idempotency_key"]
-        existing_key_account = self.existing_key_account(idempotency_key)
+        account_with_same_key = self.existing_key_account(idempotency_key)
 
-        if existing_key_account is not None:
-            return self._replay(existing_key_account, payload), False
-        
+        if account_with_same_key is not None:
+            return self._replay(account_with_same_key, payload), False
+
         try:
             account = self.account_repository.create_account(
                 event_id=uuid.UUID(payload["event_id"]),
-                holder_id= self._holder_id(payload),
+                holder_id=self._holder_id(payload),
+                holder_type=payload.get("holder_type"),
                 kind=payload["kind"],
                 idempotency_key=idempotency_key,
             )
-        except IntegrityError:
+        except IntegrityError as integrity_error:
             self.session.rollback()
-            existing_key_account = self.existing_key_account(idempotency_key)
-            if existing_key_account is None:
-                raise 
-            return self._replay(existing_key_account, payload), False
-        
+            account_with_same_key = self.existing_key_account(idempotency_key)
+            if account_with_same_key is not None:
+                return self._replay(account_with_same_key, payload), False
+            if violated_constraint_name(integrity_error) in ONE_ACCOUNT_PER_EVENT_CONSTRAINTS:
+                raise AccountAlreadyExistsInEvent(payload["event_id"])
+            raise
+
         account_dto = AccountDTO.obj_to_dict(account)
         self.session.commit()
         self.logger.info(f"Account created: {account_dto['id']}, kind={account.kind}")
@@ -96,8 +103,9 @@ class AccountController(BaseController):
 
     def _replay(self, account, payload: dict) -> dict:
         same_request = (
-            account.event_id == uuid.UUID(payload["event_id"]) 
+            account.event_id == uuid.UUID(payload["event_id"])
             and account.holder_id == self._holder_id(payload)
+            and account.holder_type == payload.get("holder_type")
             and account.kind == payload["kind"]
         )
         if not same_request:

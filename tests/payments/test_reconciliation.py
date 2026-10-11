@@ -15,7 +15,7 @@ teste black-box: para provocá-lo seria preciso escrever no banco por
 fora da API. Ele existe para detectar justamente isso.
 """
 
-from tests.utils.payments import Event, move, new_uuid, reverse
+from tests.utils.payments import Event, assert_error, move, new_uuid, reverse, setup_ok
 from tests.utils.services import payments
 
 
@@ -31,15 +31,16 @@ class TestReconciliation:
         kinds = sorted(account["kind"] for account in reconciliation["accounts"])
         assert kinds == ["external", "fee"]
 
-    def test_a_whole_day_still_closes_at_zero(self):
+    def test_purchases_transfer_and_refund_still_close_at_zero(self):
         event = Event()
         buyer = event.user_account(balance_cents=10000)
         friend = event.user_account(balance_cents=3000)
-        company = event.user_account()
-        key, _ = event.purchase(buyer, company)
-        event.purchase(friend, company, total=2000, fee=100, cashback=40)
-        move([(buyer, friend, 500)])
-        reverse(key)
+        stand = event.stand_account()
+        key, purchase = event.purchase(buyer, stand)
+        setup_ok(purchase)
+        setup_ok(event.purchase(friend, stand, total=2000, fee=100, cashback=40)[1])
+        setup_ok(move([(buyer, friend, 500)]))
+        setup_ok(reverse(key))
 
         reconciliation = event.reconciliation()
 
@@ -75,4 +76,4 @@ class TestReconciliation:
     def test_without_token(self):
         response = payments.send("GET", f"/internal/events/{new_uuid()}/reconciliation", token=None)
 
-        assert response.status_code == 403
+        assert_error(response, 403, "QIT000002")

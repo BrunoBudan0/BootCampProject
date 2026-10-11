@@ -18,11 +18,17 @@ Cartão   POST {CARD_PROVIDER_URL}/authorizations
 Pix      POST {PIX_PROVIDER_URL}/charges
          pedido:   {amount_cents, reference}
          resposta: 201 {charge_id, copy_paste, expires_at}
-`reference` é a chave de idempotência da recarga: é ela que permite
-perguntar ao provedor, depois de um timeout, se a cobrança aconteceu.
+Webhook  PUT /webhooks/pix/{id da transação}, chamado pelo provedor
+         corpo:     {status: "paid" | "expired", amount_cents, reference}
+         cabeçalho: X-Pix-Signature = HMAC-SHA256 do corpo, em hexadecimal
+No cartão, `reference` é a chave de idempotência da recarga. No Pix, é o
+id da transação: o provedor a devolve no webhook, e a assinatura cobre o
+corpo inteiro, então um aviso assinado só vale para a cobrança dele.
 """
 
 import json
+import time
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -32,6 +38,8 @@ from tests.utils.services import MOCKSERVER_URL
 # docker-compose.yml: CARD_PROVIDER_URL e PIX_PROVIDER_URL).
 CARD_AUTHORIZATIONS = "/card-provider/authorizations"
 PIX_CHARGES = "/pix-provider/charges"
+
+PIX_COPY_PASTE = "00020126580014br.gov.bcb.pix0136teste-banco-de-eventos"
 
 TIMEOUT_SECONDS = 15
 
@@ -62,6 +70,23 @@ def expect(method: str, path: str, status_code: int, body: dict = None, delay_se
     ).raise_for_status()
 
 
+def expect_dropped_connection(method: str, path: str) -> None:
+    """O ator recebe o pedido inteiro e fecha a conexão sem responder.
+
+    É o caso mais traiçoeiro para quem chama: o pedido chegou ao provedor,
+    então a cobrança pode ter acontecido, mas a resposta nunca vem.
+    """
+    expectation = {
+        "httpRequest": {"method": method, "path": path},
+        "httpError": {"dropConnection": True},
+        "times": {"unlimited": True},
+    }
+
+    requests.put(
+        f"{MOCKSERVER_URL}/mockserver/expectation", json=expectation, timeout=TIMEOUT_SECONDS
+    ).raise_for_status()
+
+
 def received(method: str, path: str, times: int, json_fields: dict = None) -> bool:
     """O ator recebeu exatamente `times` pedidos assim?
 
@@ -83,3 +108,20 @@ def received(method: str, path: str, times: int, json_fields: dict = None) -> bo
 
     # 202: a verificação bateu. 406: não bateu (o corpo diz o que chegou).
     return response.status_code == 202
+
+
+def wait_until_received(method: str, path: str, times: int, deadline_seconds: float = 10) -> None:
+    """Espera o ator receber o pedido, em vez de dormir um tempo fixo.
+
+    Um `sleep` adivinha quanto a API demora; numa máquina lenta ele erra.
+    Aqui o teste só segue quando o pedido de fato chegou ao provedor.
+    """
+    give_up_at = time.monotonic() + deadline_seconds
+    while not received(method, path, times):
+        assert time.monotonic() < give_up_at, f"o ator não recebeu {times} pedido(s) {method} {path} a tempo"
+        time.sleep(0.05)
+
+
+def pix_charge_answer(minutes_to_expire: int = 60) -> dict:
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=minutes_to_expire)
+    return {"charge_id": "charge-123", "copy_paste": PIX_COPY_PASTE, "expires_at": expires_at.isoformat()}

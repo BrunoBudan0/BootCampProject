@@ -23,7 +23,9 @@
 -- ============================================================
 -- kind:
 --   user      tem dono (holder_id): a credencial do público ou o stand
---             da empresa. NUNCA fica negativa.
+--             da empresa. NUNCA fica negativa. holder_type diz qual dos
+--             dois: attendee (credencial) ou company (stand). Só
+--             credencial transfere, e só para outra credencial.
 --   fee       uma por evento: recebe a tarifa e paga o cashback.
 --   external  uma por evento: a contrapartida do dinheiro que entra de
 --             fora. Fica negativa de propósito: o módulo dela é quanto
@@ -40,6 +42,7 @@ CREATE TABLE account(
     account_key             UUID NOT NULL,
     event_id                UUID NOT NULL,          -- REF: API de Eventos
     holder_id               UUID,                   -- REF: API de Usuários
+    holder_type             VARCHAR(10),
     kind                    VARCHAR(10) NOT NULL,
     balance_cents           BIGINT NOT NULL DEFAULT 0,
     blocked                 BOOLEAN NOT NULL DEFAULT FALSE,
@@ -51,8 +54,10 @@ CREATE TABLE account(
     -- reenvio com a mesma chave encontra a conta que já existe.
     CONSTRAINT uq_account_idempotency_key UNIQUE (idempotency_key),
     CONSTRAINT ck_account_kind CHECK (kind IN ('user', 'fee', 'external')),
-    -- Conta de usuário tem dono; conta do sistema não tem.
+    -- Conta de usuário tem dono, e o tipo dele; conta do sistema não tem.
     CONSTRAINT ck_account_holder CHECK ((kind = 'user') = (holder_id IS NOT NULL)),
+    CONSTRAINT ck_account_holder_type_presence CHECK ((kind = 'user') = (holder_type IS NOT NULL)),
+    CONSTRAINT ck_account_holder_type CHECK (holder_type IN ('attendee', 'company')),
     -- A última linha de defesa: mesmo que o UPDATE condicional falhe, o
     -- banco recusa saldo negativo em conta de usuário.
     CONSTRAINT ck_account_user_balance CHECK (kind <> 'user' OR balance_cents >= 0)
@@ -60,6 +65,12 @@ CREATE TABLE account(
 
 CREATE INDEX ix_account_event ON account (event_id);
 CREATE INDEX ix_account_holder ON account (holder_id);
+
+-- Uma conta fee e uma external por evento, e uma conta por dono em cada
+-- evento. A chave de idempotência sozinha não garante isso: Eventos
+-- reenviando com OUTRA chave abriria uma segunda conta.
+CREATE UNIQUE INDEX uq_account_system_kind_per_event ON account (event_id, kind) WHERE kind <> 'user';
+CREATE UNIQUE INDEX uq_account_holder_per_event ON account (event_id, holder_id) WHERE kind = 'user';
 
 
 -- ============================================================
@@ -77,8 +88,14 @@ CREATE INDEX ix_account_holder ON account (holder_id);
 --   settled   o dinheiro andou
 --   reversed  foi estornada (o estorno é OUTRA transação, que aponta
 --             para esta em reverses_transaction_id)
---   canceled  Pix expirado; nenhum saldo mexeu
+--   canceled  Pix expirado ou recarga recusada; nenhum saldo mexeu
 -- As únicas mudanças permitidas estão no gatilho do fim do arquivo.
+--
+-- settled_at é o momento em que o dinheiro andou. Quem preenche é o
+-- gatilho, com o relógio de quando a linha é escrita (depois da trava
+-- das contas), e ninguém reescreve. O extrato ordena e soma por ele, e
+-- não por created_at: um Pix pedido antes e pago depois de uma
+-- transferência entra no extrato depois dela.
 CREATE TABLE transaction(
     id                      BIGSERIAL PRIMARY KEY,
     transaction_key         UUID NOT NULL,
@@ -92,6 +109,7 @@ CREATE TABLE transaction(
     reverses_transaction_id BIGINT REFERENCES transaction (id),
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    settled_at              TIMESTAMPTZ,
 
     CONSTRAINT uq_transaction_key UNIQUE (transaction_key),
     -- Quem fecha a janela da idempotência: duas requisições com a mesma
@@ -103,12 +121,14 @@ CREATE TABLE transaction(
     CONSTRAINT ck_transaction_amount CHECK (amount_cents > 0),
     CONSTRAINT ck_transaction_accounts CHECK (source_account_id <> destination_account_id),
     CONSTRAINT ck_transaction_method CHECK (payment_method IN ('balance', 'card', 'pix', 'cash')),
-    CONSTRAINT ck_transaction_status CHECK (status IN ('pending', 'settled', 'reversed', 'canceled'))
+    CONSTRAINT ck_transaction_status CHECK (status IN ('pending', 'settled', 'reversed', 'canceled')),
+    CONSTRAINT ck_transaction_settled_at CHECK ((status IN ('settled', 'reversed')) = (settled_at IS NOT NULL))
 );
 
--- O extrato e a conciliação procuram por conta, em ordem de tempo.
-CREATE INDEX ix_transaction_source ON transaction (source_account_id, created_at);
-CREATE INDEX ix_transaction_destination ON transaction (destination_account_id, created_at);
+-- O extrato e a conciliação procuram por conta, na ordem em que o
+-- dinheiro andou.
+CREATE INDEX ix_transaction_source ON transaction (source_account_id, settled_at);
+CREATE INDEX ix_transaction_destination ON transaction (destination_account_id, settled_at);
 
 
 -- ============================================================
@@ -224,19 +244,20 @@ CREATE TRIGGER trg_critical_log_payment_no_truncate BEFORE TRUNCATE ON critical_
 
 -- Numa transação, só o status (e o updated_at) muda, e só por um destes
 -- caminhos:
---   pending -> settled | canceled      (o Pix foi pago ou expirou)
+--   pending -> settled | canceled      (pago, recusado ou expirado)
 --   settled -> reversed                (foi estornada)
 -- Valor, contas, chave e método de uma transação nunca são reescritos:
--- desfazer é uma transação nova no sentido contrário.
+-- desfazer é uma transação nova no sentido contrário. O settled_at nasce
+-- na passagem pending -> settled, e depois disso não muda mais.
 CREATE FUNCTION transaction_status_only() RETURNS trigger AS $$
 BEGIN
     IF (NEW.transaction_key, NEW.idempotency_key, NEW.leg, NEW.source_account_id,
         NEW.destination_account_id, NEW.amount_cents, NEW.payment_method,
-        NEW.reverses_transaction_id, NEW.created_at)
+        NEW.reverses_transaction_id, NEW.created_at, NEW.settled_at)
        IS DISTINCT FROM
        (OLD.transaction_key, OLD.idempotency_key, OLD.leg, OLD.source_account_id,
         OLD.destination_account_id, OLD.amount_cents, OLD.payment_method,
-        OLD.reverses_transaction_id, OLD.created_at) THEN
+        OLD.reverses_transaction_id, OLD.created_at, OLD.settled_at) THEN
         RAISE EXCEPTION 'transaction % só pode mudar de status', OLD.id;
     END IF;
 
@@ -247,6 +268,10 @@ BEGIN
         RAISE EXCEPTION 'transaction %: % -> % não é uma transição permitida', OLD.id, OLD.status, NEW.status;
     END IF;
 
+    IF OLD.status = 'pending' AND NEW.status = 'settled' THEN
+        NEW.settled_at = clock_timestamp();
+    END IF;
+
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
@@ -254,3 +279,17 @@ $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_transaction_status_only BEFORE UPDATE ON transaction
     FOR EACH ROW EXECUTE FUNCTION transaction_status_only();
+
+-- A transação que já nasce settled ganha o settled_at na hora; qualquer
+-- valor mandado pela aplicação é descartado. clock_timestamp(), e não
+-- NOW(): NOW() é o começo da transação de banco, que pode ter começado
+-- antes de outra que pegou a trava das contas primeiro.
+CREATE FUNCTION transaction_settled_at_on_insert() RETURNS trigger AS $$
+BEGIN
+    NEW.settled_at = CASE WHEN NEW.status = 'settled' THEN clock_timestamp() END;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_transaction_settled_at_on_insert BEFORE INSERT ON transaction
+    FOR EACH ROW EXECUTE FUNCTION transaction_settled_at_on_insert();

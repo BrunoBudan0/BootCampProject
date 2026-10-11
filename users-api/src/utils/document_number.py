@@ -89,3 +89,16 @@ def is_valid_cnpj(document_number: str) -> bool:
             return False
 
     return True
+
+
+def is_valid_cpf_or_cnpj(document_number: str) -> bool:
+    return is_valid_cpf(document_number) or is_valid_cnpj(document_number)
+
+
+def document_kind(document_number: str) -> str:
+    digit_count = sum(1 for character in document_number if character.isdigit())
+
+    if digit_count == CPF_LENGTH:
+        return "CPF"
+
+    return "CNPJ"

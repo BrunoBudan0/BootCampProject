@@ -1,8 +1,20 @@
+import hmac
+
 from fastapi import FastAPI, Request
 
 from constants import BYPASS_ENDPOINTS, INTERNAL_TOKEN
 from errors.base_error import ForbiddenNotInternal
 from errors.handlers import qi_exception_to_response
+from utils.logger import get_logger
+
+INTERNAL_ROUTES_PREFIX = "/internal/"
+INTERNAL_CALL_REJECTED = "INTERNAL_CALL_REJECTED"
+
+logger = get_logger(__name__)
+
+
+def internal_token_matches(received_token) -> bool:
+    return hmac.compare_digest((received_token or "").encode("utf-8"), INTERNAL_TOKEN.encode("utf-8"))
 
 
 def register_internal_token_middleware(application: FastAPI) -> None:
@@ -24,7 +36,13 @@ def register_internal_token_middleware(application: FastAPI) -> None:
         if request.method == "OPTIONS" or is_public:
             return await call_next(request)
 
-        if request.headers.get("INTERNAL-TOKEN") != INTERNAL_TOKEN:
-            return qi_exception_to_response(ForbiddenNotInternal())
+        if not internal_token_matches(request.headers.get("INTERNAL-TOKEN")):
+            refusal = ForbiddenNotInternal()
+            if request.url.path.startswith(INTERNAL_ROUTES_PREFIX):
+                logger.critical(
+                    f"{INTERNAL_CALL_REJECTED} route={request.url.path} "
+                    f"http_status={refusal.http_status} error_code={refusal.code}"
+                )
+            return qi_exception_to_response(refusal)
 
         return await call_next(request)

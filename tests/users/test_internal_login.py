@@ -12,20 +12,18 @@ from tests.utils.users import (
     registered,
 )
 
-PASSWORD_FIELDS = {"password", "password_hash"}
-
 
 @pytest.mark.parametrize("user_type", [ATTENDEE, ORGANIZER, COMPANY])
 class TestLoginOfEveryUserType:
-    def test_right_password_returns_the_user(self, user_type):
+    def test_right_password_returns_only_who_the_user_is(self, user_type):
+        """O Gateway só precisa do id e do tipo para abrir a sessão; o resto
+        do cadastro não sai de Usuários."""
         user = registered(user_type)
 
         response = login(user["email"], DEFAULT_PASSWORD, user_type)
 
         assert response.status_code == 200
-        assert response.json()["id"] == user["id"]
-        assert response.json()["user_type"] == user_type
-        assert PASSWORD_FIELDS.isdisjoint(response.json())
+        assert response.json() == {"id": user["id"], "user_type": user_type}
 
     def test_wrong_password_is_refused(self, user_type):
         user = registered(user_type)

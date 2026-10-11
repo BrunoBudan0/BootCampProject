@@ -10,7 +10,7 @@ from middlewares import (
     register_request_logger_middleware,
     register_session_manager_middleware,
 )
-from resources import HealthCheckResource
+from resources import HealthCheckResource, RegistrationResource, UserResource
 from utils.logger import setup_logging
 
 
@@ -135,8 +135,17 @@ def create_app() -> FastAPI:
         methods=["GET"]
     )
 
-    # As rotas deste serviço entram aqui, uma linha por endereço e verbo,
-    # seguindo a tabela de rotas da RFC.
+    registration_resource = RegistrationResource()
+    user_resource = UserResource()
+
+    application.add_api_route("/attendees", registration_resource.on_post_attendee, methods=["POST"])
+    application.add_api_route("/organizers", registration_resource.on_post_organizer, methods=["POST"])
+    application.add_api_route("/companies", registration_resource.on_post_company, methods=["POST"])
+    application.add_api_route("/internal/login", user_resource.on_post_internal_login, methods=["POST"])
+    application.add_api_route("/me", user_resource.on_get_me, methods=["GET"])
+    application.add_api_route(
+        "/internal/companies/{company_id}", user_resource.on_get_internal_company, methods=["GET"]
+    )
 
     register_error_handlers(application)
 

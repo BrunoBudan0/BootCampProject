@@ -26,8 +26,8 @@ class TransactionDTO:
     @staticmethod
     def with_pix_charge(transaction, pix_charge) -> dict:
         transaction_dto = TransactionDTO.obj_to_dict(transaction)
-        transaction_dto["pix_copy_paste"] = pix_charge.copy_paste
-        transaction_dto["expires_at"] = pix_charge.expires_at.isoformat()
+        transaction_dto["pix_copy_paste"] = pix_charge.copy_paste if pix_charge else None
+        transaction_dto["expires_at"] = pix_charge.expires_at.isoformat() if pix_charge else None
 
         return transaction_dto
 
@@ -42,6 +42,7 @@ class TransactionDTO:
                     "amount_cents": line.signed_amount,
                     "balance_after_cents": line.balance_after,
                     "created_at": line.created_at.isoformat(),
+                    "settled_at": line.settled_at.isoformat(),
                 }
                 for line in statement_lines
             ],

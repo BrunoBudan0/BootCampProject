@@ -8,7 +8,7 @@ Corpo:     {"blocked": true | false}
 Respostas: 200 a conta · 400 QIT000001 · 404 QIT002020
 """
 
-from tests.utils.payments import Event, assert_error, balance, block, move, new_uuid
+from tests.utils.payments import Event, assert_error, balance, block, move, new_uuid, setup_ok
 from tests.utils.services import payments
 
 
@@ -25,7 +25,7 @@ class TestBlock:
     def test_blocking_twice_gives_the_same_result(self):
         account = Event().user_account()
 
-        block(account)
+        setup_ok(block(account))
         response = block(account)
 
         assert response.status_code == 200
@@ -33,7 +33,7 @@ class TestBlock:
 
     def test_unblocks_the_account(self):
         account = Event().user_account()
-        block(account)
+        setup_ok(block(account))
 
         response = block(account, blocked=False)
 
@@ -43,34 +43,35 @@ class TestBlock:
     def test_blocked_account_cannot_pay(self):
         event = Event()
         account = event.user_account(balance_cents=5000)
-        company = event.user_account()
-        block(account)
+        stand = event.stand_account()
+        setup_ok(block(account))
 
-        response = move([(account, company, 1000)])
+        response = move([(account, stand, 1000)])
 
         assert_error(response, 409, "QIT002022")
         assert balance(account) == 5000
-        assert balance(company) == 0
+        assert balance(stand) == 0
 
     def test_blocked_account_cannot_receive(self):
         event = Event()
         payer = event.user_account(balance_cents=5000)
         blocked = event.user_account()
-        block(blocked)
+        setup_ok(block(blocked))
 
         response = move([(payer, blocked, 1000)])
 
         assert_error(response, 409, "QIT002022")
         assert balance(payer) == 5000
+        assert balance(blocked) == 0
 
     def test_unblocked_account_pays_again(self):
         event = Event()
         account = event.user_account(balance_cents=5000)
-        company = event.user_account()
-        block(account)
-        block(account, blocked=False)
+        stand = event.stand_account()
+        setup_ok(block(account))
+        setup_ok(block(account, blocked=False))
 
-        response = move([(account, company, 1000)])
+        response = move([(account, stand, 1000)])
 
         assert response.status_code == 201
         assert balance(account) == 4000

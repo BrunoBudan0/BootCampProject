@@ -4,12 +4,13 @@
   "properties": {
     "event_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
     "holder_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "holder_type": { "enum": ["attendee", "company"] },
     "kind": { "enum": ["user", "fee", "external"] },
     "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 80 }
   },
   "required": ["event_id", "kind", "idempotency_key"],
   "additionalProperties": false,
   "if": { "properties": { "kind": { "const": "user" } } },
-  "then": { "required": ["holder_id"] },
-  "else": { "not": { "required": ["holder_id"] } }
+  "then": { "required": ["holder_id", "holder_type"] },
+  "else": { "not": { "anyOf": [{ "required": ["holder_id"] }, { "required": ["holder_type"] }] } }
 }

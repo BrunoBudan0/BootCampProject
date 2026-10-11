@@ -1,19 +1,10 @@
 from errors import QIException
 
 
-# Os erros de regra de negócio DESTE serviço moram aqui: uma classe por
-# recusa, cada uma com o código da tabela de rotas da RFC (QIT002xxx).
-# Os erros que toda API tem (QIT000xxx) já estão em base_error.py.
-#
-# O formato de cada classe é o do template: code, title, http_status,
-# description (inglês) e translation (português). Código repetido
-# derruba a API na subida, de propósito (error_verification).
-
 class IdempotencyKeyConflict(QIException):
     code = "QIT002025"
 
     def __init__(self, idempotency_key) -> None:
-
         title = "Idempotency key conflict"
         http_status = 409
         description = f"The Key {idempotency_key} was already used with different content."
@@ -22,13 +13,6 @@ class IdempotencyKeyConflict(QIException):
 
 
 class NotFoundAccount(QIException):
-    """A conta não existe — OU não é de quem chama.
-
-    Os dois casos respondem exatamente igual, de propósito (R8): com um
-    403 para "existe mas não é sua", quem varre ids aprenderia quais
-    contas existem.
-    """
-
     code = "QIT002020"
 
     def __init__(self, account_id) -> None:
@@ -62,8 +46,6 @@ class BlockedAccount(QIException):
 
 
 class NotFoundTransaction(QIException):
-    """A transação não existe — OU não envolve conta de quem chama (R8)."""
-
     code = "QIT002023"
 
     def __init__(self, transaction_id) -> None:
@@ -97,13 +79,6 @@ class AlreadyReversed(QIException):
 
 
 class InvalidAmount(QIException):
-    """Valor zero ou negativo em qualquer rota de dinheiro.
-
-    422, e não 400: o corpo chegou no formato certo (um inteiro), e é o
-    valor que não pode existir. Um negativo seria uma transferência ao
-    contrário, disfarçada.
-    """
-
     code = "QIT002028"
 
     def __init__(self, amount_cents) -> None:
@@ -126,8 +101,6 @@ class SameAccount(QIException):
 
 
 class DifferentEvents(QIException):
-    """O dinheiro não atravessa a fronteira do evento: cada evento fecha em zero sozinho."""
-
     code = "QIT002030"
 
     def __init__(self) -> None:
@@ -139,12 +112,6 @@ class DifferentEvents(QIException):
 
 
 class ProviderUnavailable(QIException):
-    """O provedor de fora falhou, demorou ou respondeu sem JSON.
-
-    502 diz "o problema não foi aqui dentro": no dia do incidente, é o que
-    decide de que lado procurar.
-    """
-
     code = "QIT002031"
 
     def __init__(self, provider) -> None:
@@ -185,4 +152,48 @@ class PixAmountMismatch(QIException):
         http_status = 422
         description = f"Charged {charged_cents} cents but {paid_cents} cents were paid."
         translation = "O valor pago é diferente do valor cobrado."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class SourceIsNotAnAttendee(QIException):
+    code = "QIT002004"
+
+    def __init__(self) -> None:
+        title = "Source is not an attendee"
+        http_status = 403
+        description = "Only an attendee account can transfer balance."
+        translation = "Só a credencial do público pode transferir saldo."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class DestinationRefusesTransfers(QIException):
+    code = "QIT002027"
+
+    def __init__(self) -> None:
+        title = "Destination does not accept transfers"
+        http_status = 422
+        description = "This destination does not accept transfers."
+        translation = "Este destino não aceita transferência."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class AccountAlreadyExistsInEvent(QIException):
+    code = "QIT002036"
+
+    def __init__(self, event_id) -> None:
+        title = "Account already exists in event"
+        http_status = 409
+        description = f"Event {event_id} already has this account under another idempotency key."
+        translation = "O evento já tem esta conta, criada com outra chave."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class EventWithoutExternalAccount(QIException):
+    code = "QIT002037"
+
+    def __init__(self, event_id) -> None:
+        title = "Event without external account"
+        http_status = 409
+        description = f"Event {event_id} has no external account to receive money from outside."
+        translation = "O evento não tem a conta que recebe dinheiro de fora."
         super().__init__(title, self.code, http_status, description, translation)

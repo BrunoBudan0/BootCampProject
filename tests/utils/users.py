@@ -1,11 +1,14 @@
 import random
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
+from tests.utils.clock import today_in_sao_paulo
 from tests.utils.payments import as_caller
 from tests.utils.services import users
 
 DEFAULT_PASSWORD = "uma-senha-forte-123"
+MINIMUM_ATTENDEE_AGE = 18
+PRIVATE_FIELDS = {"password", "password_hash", "document"}
 
 ATTENDEE = "attendee"
 ORGANIZER = "organizer"
@@ -48,11 +51,15 @@ def new_email() -> str:
 
 
 def birth_date_for_age(age_in_years: int) -> str:
-    today = date.today()
+    today = today_in_sao_paulo()
     if today.month == 2 and today.day == 29:
         return date(today.year - age_in_years, 2, 28).isoformat()
 
     return date(today.year - age_in_years, today.month, today.day).isoformat()
+
+
+def birth_date_one_day_short_of(age_in_years: int) -> str:
+    return (date.fromisoformat(birth_date_for_age(age_in_years)) + timedelta(days=1)).isoformat()
 
 
 def attendee_payload(**changes) -> dict:

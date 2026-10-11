@@ -11,9 +11,6 @@ import requests
 
 from tests.utils.services import ALL_SERVICES, MOCKSERVER_URL
 
-# Uma rota que não existe em serviço nenhum. O middleware de token roda
-# ANTES de o FastAPI procurar a rota, então ela serve para testar a porta
-# sem depender de rota de negócio nenhuma.
 ROUTE_THAT_DOES_NOT_EXIST = "/route-that-does-not-exist"
 
 
@@ -37,6 +34,9 @@ class TestEveryServiceIsUpAndLocked:
         assert response.status_code == 204
 
     def test_request_without_token_is_refused(self, service):
+        """A rota não existe em serviço nenhum: o token é conferido antes de
+        o FastAPI procurar a rota, então a porta é testada sem depender de
+        regra de negócio."""
         response = service.send("GET", ROUTE_THAT_DOES_NOT_EXIST, token=None)
 
         assert response.status_code == 403
@@ -49,8 +49,8 @@ class TestEveryServiceIsUpAndLocked:
         assert response.json()["code"] == "QIT000002"
 
     def test_own_token_gets_past_the_door(self, service):
-        # Com o token certo a requisição passa do middleware e só então
-        # descobre que a rota não existe: o 404 prova que a porta abriu.
+        """O 404 prova que a porta abriu: só depois dela a requisição
+        descobre que a rota não existe."""
         response = service.send("GET", ROUTE_THAT_DOES_NOT_EXIST)
 
         assert response.status_code == 404
