@@ -4,6 +4,8 @@ Banco de circuito fechado para feiras e eventos. O público carrega saldo numa c
 
 Projeto do Bootcamp QI Tech 2026, de Bruno Budano Mello e Pedro Henrique Mathias Santiago.
 
+A RFC, com as decisões e as alternativas descartadas, está em [`docs/RFC-banco-evento.pdf`](docs/RFC-banco-evento.pdf).
+
 ## Arquitetura
 
 Quatro serviços, cada um com o próprio banco Postgres. Nenhum lê o banco do outro: quando um precisa de algo que não é dele, pede por HTTP a uma rota da API dona.
@@ -62,7 +64,14 @@ Os testes são black-box: falam com as APIs só por HTTP e não importam nada de
 |---|---|
 | `tests/test_stack.py` | O ambiente: cada serviço de pé e cada porta só abrindo com o token certo |
 | `tests/payments/`, `tests/users/`, `tests/events/` | Cada API sozinha, chamada direto na porta dela |
+| `tests/gateway/` | O Gateway: login, sessão, limite de tentativas e roteamento para as APIs |
 | `tests/e2e/` | O sistema inteiro, entrando pelo Gateway |
+
+## Se algo falhar
+
+- **Banco desatualizado:** os bancos só são criados quando o volume nasce. Depois de mudar um `database.sql`, ou se aparecer `relation ... does not exist` no log, rode `docker compose down -v` e `docker compose up -d --build --wait`.
+- **Máquina lenta:** as APIs esperam até 5 s umas pelas outras. Com a máquina sem memória livre, uma resposta pode passar disso e virar `502 QIT002031`. Rode de novo com menos programas abertos.
+- **Tempo esperado:** a suíte inteira tem 375 testes e leva cerca de 2 minutos.
 
 ## Estrutura
 
@@ -73,6 +82,7 @@ users-api/               Dockerfile, requirements.txt,
 events-api/              database/ (o database.sql daquele banco)
 payments-api/            src/ (as camadas do bootcamp-base-api)
 tests/                 a suíte, uma pasta por API e uma para o sistema inteiro
+docs/                  a RFC em PDF
 ```
 
 ## Configuração
