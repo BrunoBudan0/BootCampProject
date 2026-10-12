@@ -40,8 +40,8 @@ class TestCreateProduct:
             "POST", "/products", json=new_product_body(price_cents=0), headers=headers("company")
         )
 
-        assert response.status_code == 400
-        assert response.json()["code"] == "QIT000001"
+        assert response.status_code == 422
+        assert response.json()["code"] == "QIT002028"
 
 
     def test_price_has_a_ceiling(self):

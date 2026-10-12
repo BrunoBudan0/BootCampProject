@@ -1,4 +1,4 @@
-"""GET /accounts/{id}/statement — o extrato paginado.
+"""GET /accounts/{id}/transactions — o extrato paginado.
 
 Não existe tabela de lançamentos: o extrato são as transações em que a
 conta aparece como origem ou destino, já settled ou reversed, da mais
@@ -10,7 +10,8 @@ pedido (created_at): um Pix pedido antes de uma transferência e pago
 depois dela entra no extrato depois dela, e o saldo das linhas antigas
 nunca muda.
 
-Parâmetros: limit (1 a 100, padrão 10), page (padrão 0), date_from,
+Parâmetros: limit (1 a 100, padrão 10), page (a partir de 1, padrão 1,
+            como em Eventos), date_from,
             date_to (data, ou data e hora ISO). Data sem hora é o dia em
             America/Sao_Paulo, e date_to só com a data inclui o dia
             inteiro. Data e hora sem fuso também são de São Paulo, e
@@ -106,13 +107,14 @@ class TestStatement:
         setup_ok(move([(account, receiver, 1000)]))
         setup_ok(move([(account, receiver, 1000)]))
 
-        first = statement(account, limit=2, page=0).json()
-        second = statement(account, limit=2, page=1).json()
+        first = statement(account, limit=2, page=1).json()
+        second = statement(account, limit=2, page=2).json()
 
         assert len(first["data"]) == 2
         assert first["is_last_page"] is False
         assert first["limit"] == 2
-        assert first["page"] == 0
+        assert first["page"] == 1
+        assert second["page"] == 2
         assert len(second["data"]) == 1
         assert second["is_last_page"] is True
         first_ids = {line["transaction_id"] for line in first["data"]}
@@ -222,6 +224,17 @@ class TestStatementRefusals:
         """Sem isto, um ?limt=5 com a letra trocada devolveria a página padrão
         como se o filtro tivesse funcionado."""
         assert_error(statement(Event().user_account(), limt=5), 400, "QIT000001")
+
+    def test_pages_start_at_one(self):
+        assert_error(statement(Event().user_account(), page=0), 400, "QIT000001")
+
+    def test_without_page_the_first_page_comes(self):
+        account = Event().user_account(balance_cents=1000)
+
+        response = statement(account)
+
+        assert response.json()["page"] == 1
+        assert len(response.json()["data"]) == 1
 
     def test_page_must_be_a_number(self):
         assert_error(statement(Event().user_account(), page="first"), 400, "QIT000001")

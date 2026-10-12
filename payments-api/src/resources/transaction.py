@@ -7,7 +7,7 @@ from controllers import TransactionController
 from utils.schema_handler import SchemaHandler
 
 DEFAULT_STATEMENT_LIMIT = 10
-DEFAULT_STATEMENT_PAGE = 0
+DEFAULT_STATEMENT_PAGE = 1
 
 
 def created_or_replayed_status(created: bool) -> int:

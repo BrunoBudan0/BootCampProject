@@ -153,7 +153,7 @@ def create_app() -> FastAPI:
 
     application.add_api_route("/accounts", account_resource.on_get_list, methods=["GET"])
     application.add_api_route("/accounts/{account_id}", account_resource.on_get_by_id, methods=["GET"])
-    application.add_api_route("/accounts/{account_id}/statement", transaction_resource.on_get_statement, methods=["GET"])
+    application.add_api_route("/accounts/{account_id}/transactions", transaction_resource.on_get_statement, methods=["GET"])
     application.add_api_route("/transactions/{transaction_id}", transaction_resource.on_get_by_id, methods=["GET"])
     application.add_api_route("/transfers", transaction_resource.on_post_transfer, methods=["POST"])
     application.add_api_route("/recharges", recharge_resource.on_post, methods=["POST"])

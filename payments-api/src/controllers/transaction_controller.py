@@ -151,7 +151,7 @@ class TransactionController(MoneyMovingController):
             raise InvalidSchema("date_from must not be after date_to")
 
         statement_lines = self.transaction_repository.statement_page(
-            account, settled_from, settled_before, limit=limit + 1, offset=page * limit
+            account, settled_from, settled_before, limit=limit + 1, offset=(page - 1) * limit
         )
         is_last_page = len(statement_lines) <= limit
 

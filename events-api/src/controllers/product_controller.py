@@ -17,6 +17,9 @@ class ProductController(BaseController):
         if user_type != UserType.COMPANY.value:
             raise NotAllowedForUserType()
 
+        if payload["price_cents"] <= 0:
+            raise NonPositiveAmount()
+
         stand = self.stands.get_by_id(uuid.UUID(payload["event_company_id"]))
         if stand is None or stand.company_id != user_id:
             raise EventNotFound()

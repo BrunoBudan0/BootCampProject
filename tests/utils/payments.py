@@ -239,7 +239,7 @@ def get_transaction(transaction_id: str, caller: str):
 def statement(account: dict, caller: str = None, **params):
     return payments.send(
         "GET",
-        f"/accounts/{account['id']}/statement",
+        f"/accounts/{account['id']}/transactions",
         headers=as_caller(caller or account["holder_id"]),
         params=params,
     )
