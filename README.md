@@ -58,6 +58,12 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
+Ou
+
+```bash
+python -m pytest
+```
+
 Os testes são black-box: falam com as APIs só por HTTP e não importam nada de `src/`.
 
 | Pasta | O que testa |
