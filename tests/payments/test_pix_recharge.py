@@ -1,4 +1,4 @@
-"""POST /recharges com Pix e PUT /webhooks/pix/{id} — pagamento e crédito em dois tempos.
+"""POST /recharges com Pix e PUT /webhooks/pix/{id}: pagamento e crédito em dois tempos.
 
 1. A recarga grava a transação external -> conta como PENDING e faz
    COMMIT antes de pedir a cobrança ao provedor: a mesma chave chegando
@@ -47,7 +47,7 @@ PARALLEL_REQUESTS = 5
 
 @pytest.fixture(autouse=True)
 def provider_creates_charges():
-    """Todo teste daqui começa com o ator limpo e criando cobranças."""
+    """Todo teste daqui começa com o Mockserver limpo e criando cobranças."""
     mockserver.reset()
     mockserver.expect("POST", PIX_CHARGES, 201, pix_charge_answer())
     yield
@@ -62,7 +62,7 @@ def pending_pix(amount_cents=5000):
     """Uma conta com uma recarga Pix criada e ainda não paga."""
     account = Event().user_account()
     response = recharge_by_pix(account, amount_cents)
-    assert response.status_code == 201, f"A PREPARAÇÃO (a recarga Pix) falhou: {response.text}"
+    assert response.status_code == 201, f"A preparação (a recarga Pix) falhou: {response.text}"
 
     return account, response.json()
 

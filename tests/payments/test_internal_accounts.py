@@ -1,4 +1,4 @@
-"""POST /internal/accounts — a API de Eventos abre uma conta.
+"""POST /internal/accounts: a API de Eventos abre uma conta.
 
 Quem chama é a API de Eventos; aqui o teste faz o papel dela, com o
 token de Pagamentos. A conta nasce com saldo zero, e a chave de
@@ -141,7 +141,7 @@ class TestCreateAccountConcurrency:
         """As requisições atravessam juntas a consulta prévia ("já existe
         conta com esta chave?"), todas respondem "não", e quem fecha a janela
         é o UNIQUE do banco. A que perde a corrida responde como replay (200,
-        a mesma conta) — nunca 500 e nunca 409, porque o pedido é o mesmo.
+        a mesma conta), nunca 500 e nunca 409, porque o pedido é o mesmo.
         """
         payload = new_account()
 

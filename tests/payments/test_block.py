@@ -1,4 +1,4 @@
-"""PUT /internal/accounts/{id}/block — bloquear ou liberar uma conta.
+"""PUT /internal/accounts/{id}/block: bloquear ou liberar uma conta.
 
 A API de Eventos chama junto com o bloqueio da credencial (crachá
 perdido). Conta bloqueada não paga nem recebe. A rota é idempotente:

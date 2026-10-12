@@ -1,7 +1,7 @@
 """O sistema está de pé, e cada porta só abre com a chave certa.
 
 Estes testes não sabem nada de regra de negócio: eles provam o que a
-Fase 0 montou. A classe inteira roda uma vez para cada serviço — é o
+Fase 0 montou. A classe inteira roda uma vez para cada serviço; é o
 que o `parametrize` faz: a mesma função, quatro vezes, uma linha no
 relatório para cada serviço (`test_...[payments-api]`).
 """

@@ -20,8 +20,6 @@ def new_product_body(**changes):
     return body
 
 
-# o caminho feliz entra junto com a rota de stand (POST /events/{id}/companies)
-
 class TestCreateProduct:
     def test_only_company_creates(self):
         response = events.send("POST", "/products", json=new_product_body(), headers=headers("attendee"))
@@ -85,7 +83,6 @@ class TestGetAndUpdateProduct:
 
 
 class TestProductOnRealStand:
-    # precisa de Usuários e Pagamentos de pé
     def test_company_creates_and_attendee_scans(self):
         organizer = uuid.uuid4()
         event_id = create_event(organizer)
@@ -116,7 +113,6 @@ class TestProductOnRealStand:
 
 
 class TestStockUpdate:
-    # precisa de Usuários e Pagamentos de pé
     def setup_method(self):
         self.fair = Fair(stock=10)
 

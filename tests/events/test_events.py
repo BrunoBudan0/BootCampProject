@@ -19,7 +19,6 @@ def new_event_body(**changes):
 
 
 class TestCreateEvent:
-    # precisa do POST /internal/accounts de Pagamentos funcionando
     def test_creates_event_with_initial_rates(self):
         response = events.send("POST", "/events", json=new_event_body(), headers=organizer_headers())
 

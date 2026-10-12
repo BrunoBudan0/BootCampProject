@@ -1,54 +1,33 @@
-# ─────────────────────────────────────────────────────────────────────
-# Banco de Eventos — o sistema inteiro em um arquivo
+# Banco de Eventos: o sistema inteiro.
 #
 #     docker compose up -d --build --wait
 #
-# sobe os 9 containers e só devolve o terminal quando todos estão de pé.
-# Depois disso, `pytest` na raiz do repositório.
+# Sobe os 9 containers e devolve o terminal quando todos estão de pé.
+# Depois, `pytest` na raiz. Nenhum arquivo precisa ser criado antes: cada
+# configuração tem um padrão em ${VARIAVEL:-padrao}, e um .env na raiz
+# (copiado do .env.example) tem prioridade.
 #
-# Ninguém precisa criar arquivo nenhum antes (R2): cada configuração tem
-# um valor padrão escrito no próprio ${VARIAVEL:-padrao}. Se existir um
-# .env na raiz (copiado do .env.example), o que estiver nele ganha.
-# ─────────────────────────────────────────────────────────────────────
+# Redes
+#   services        as 4 APIs e o Mockserver. Uma API chama a outra pelo
+#                   nome do serviço (http://payments-api:3000).
+#   <api>-db-net    uma por banco, só com o banco e a API dona dele: nenhuma
+#                   API alcança o banco de outra.
 #
-# AS REDES — quem enxerga quem
+# Portas
+#   gateway         3000, a única aberta.
+#   as 3 APIs       presas a 127.0.0.1, para os testes chegarem direto em cada uma.
+#   mockserver      127.0.0.1:1080, para os testes programarem os provedores.
+#   os 4 bancos     nenhuma.
 #
-#   services        as 4 APIs e o Mockserver. É por ela que uma API chama
-#                   a outra, pelo NOME do serviço (http://payments-api:3000),
-#                   nunca por localhost: dentro de um container, localhost
-#                   é o próprio container.
-#   <api>-db-net    uma por banco, com só duas pontas: o banco e a API
-#                   dona dele. A API de Eventos não tem caminho nenhum até
-#                   o payments-db — "nenhuma API lê o banco da outra" deixa
-#                   de ser promessa e vira impossibilidade.
+# Tokens
+#   Cada API confere o próprio INTERNAL_TOKEN em toda rota, menos / e
+#   /health_check. O Gateway conhece os tokens das 3 APIs, Eventos conhece
+#   os de Usuários e Pagamentos, e Pagamentos e Usuários não conhecem
+#   nenhum. O token do app e do painel é o INTERNAL_TOKEN do Gateway.
 #
-# AS PORTAS — o que a sua máquina enxerga
-#
-#   gateway         3000, aberta: é a única porta do sistema.
-#   as 3 APIs       presas a 127.0.0.1: só a própria máquina alcança. É por
-#                   elas que os testes de cada API chegam direto, sem passar
-#                   pelo Gateway. Em produção, nenhuma delas publicaria porta.
-#   mockserver      127.0.0.1:1080: é por aqui que os testes programam o ator.
-#   os 4 bancos     nenhuma. Os testes são black-box (R1) e não leem banco.
-#
-# OS TOKENS — cada API tem o seu
-#
-#   Toda API confere o PRÓPRIO token (a variável INTERNAL_TOKEN dela) no
-#   header INTERNAL-TOKEN de toda rota, menos / e /health_check. Quem
-#   precisa chamá-la recebe o valor dela; quem não precisa, não recebe:
-#
-#     Gateway       conhece os tokens das 3 APIs
-#     Eventos       conhece os de Usuários e Pagamentos
-#     Pagamentos    não conhece nenhum (só chama os provedores)
-#     Usuários      não conhece nenhum (não chama ninguém)
-#
-#   O token do sistema cliente (app e painel) é o INTERNAL_TOKEN do
-#   Gateway, e para ali: nunca entra na rede interna.
-#
-# OS TIMEOUTS — cada elo desiste antes de quem espera por ele
-#
-#   Gateway → APIs 10 s  >  Eventos → APIs 5 s  >  Pagamentos → provedor 3 s
-# ─────────────────────────────────────────────────────────────────────
+# Prazos
+#   Gateway para as APIs 10 s, Eventos para as APIs 5 s, Pagamentos para
+#   os provedores 3 s: quem está no meio desiste antes de quem espera por ele.
 
 # O nome do projeto: os containers saem como banco-evento-<serviço>-1,
 # seja qual for o nome da pasta onde o repositório foi clonado.
@@ -57,9 +36,7 @@ name: banco-evento
 # Blocos reaproveitados (os "x-" são ignorados pelo compose; o & dá nome
 # ao bloco e o * o reaproveita lá embaixo).
 x-api-healthcheck: &api-healthcheck
-  # "Subiu" não é o mesmo que "já responde". É esta checagem que diz
-  # quando a API passa a atender de verdade — e é ela que o --wait e os
-  # depends_on esperam.
+  # Diz quando a API passa a atender; é o que o --wait e os depends_on esperam.
   test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:3000/health_check\")'"]
   interval: 3s
   timeout: 5s
@@ -76,7 +53,7 @@ x-db-healthcheck: &db-healthcheck
 
 services:
 
-  # ═══ A porta da rua ════════════════════════════════════════════════
+  # Gateway
   gateway:
     build:
       context: ./gateway
@@ -121,7 +98,7 @@ services:
       - services
       - gateway-db-net
 
-  # ═══ As três APIs da rede interna ═════════════════════════════════
+  # APIs da rede interna
   users-api:
     build:
       context: ./users-api
@@ -211,7 +188,7 @@ services:
       - services
       - payments-db-net
 
-  # ═══ O ator no lugar dos provedores de cartão e Pix ═══════════════
+  # Provedores de cartão e Pix (Mockserver)
   mockserver:
     image: mockserver/mockserver:5.15.0
     ports:
@@ -221,10 +198,9 @@ services:
     networks:
       - services
 
-  # ═══ Um banco por API ═════════════════════════════════════════════
-  # Usuário e senha fixos de propósito: o banco só é alcançável pela rede
-  # dele, que só a API dona enxerga. Cada banco nasce do database.sql da
-  # pasta da API — e só na PRIMEIRA vez que o volume é criado.
+  # Bancos, um por API. Usuário e senha fixos: cada banco só é alcançável
+  # pela rede da API dona. O database.sql da API roda só quando o volume é
+  # criado.
   gateway-db:
     build: ./gateway/database
     environment:

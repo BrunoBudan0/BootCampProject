@@ -1,7 +1,7 @@
 """Como os testes chegam até cada serviço.
 
 Os testes são black-box (R1): falam com as APIs só por HTTP, pela mesma
-porta que qualquer cliente usaria. Nada aqui importa código de src/ — o
+porta que qualquer cliente usaria. Nada aqui importa código de src/: o
 teste não sabe nem em que linguagem as APIs foram escritas.
 
 Cada serviço vira um objeto com três coisas: onde ele atende, qual é o
@@ -47,7 +47,7 @@ class Service:
         token=None não manda nenhum; token="outro" manda esse valor.
 
         `params` vira a query string (?limit=10&page=0). `data` manda o
-        corpo cru, byte a byte — é o que o teste do webhook Pix usa, porque
+        corpo cru, byte a byte; é o que o teste do webhook Pix usa, porque
         a assinatura é calculada sobre os bytes exatos do corpo.
         """
         all_headers = dict(headers or {})
@@ -83,7 +83,6 @@ payments = Service("payments-api", "PAYMENTS_API_PORT", "3003", "PAYMENTS_API_TO
 
 ALL_SERVICES = [gateway, users, events, payments]
 
-# O ator no lugar dos provedores de cartão e Pix. Os testes falam com ele
-# para combinar o que ele responde (expectation) e para perguntar o que
-# ele recebeu (verify).
+# O Mockserver faz o papel dos provedores de cartão e Pix. Os testes combinam
+# o que ele responde (expectation) e perguntam o que ele recebeu (verify).
 MOCKSERVER_URL = f"http://{HOST}:{os.environ.get('MOCKSERVER_PORT', '1080')}"

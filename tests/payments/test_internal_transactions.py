@@ -1,7 +1,7 @@
-"""POST /internal/transactions — mover dinheiro.
+"""POST /internal/transactions: mover dinheiro.
 
 Quem chama é a API de Eventos (compra e recarga em dinheiro). Uma ou
-mais transferências executam JUNTAS, na ordem enviada: todas ou nenhuma.
+mais transferências executam juntas, na ordem enviada: todas ou nenhuma.
 
 Corpo:     idempotency_key, payment_method (balance | card | pix | cash),
            transfers: [{source_account_id, destination_account_id,
@@ -13,7 +13,7 @@ Respostas: 201 {idempotency_key, transactions} · 200 replay · 400 QIT000001
            · 422 QIT002030 contas de eventos diferentes
 
 A regra que nenhum teste daqui pode ver quebrar: conta de usuário nunca
-fica negativa, e numa recusa NADA se move.
+fica negativa, e numa recusa nada se move.
 """
 
 from tests.utils.payments import (
@@ -240,7 +240,7 @@ class TestIdempotency:
         assert balance(buyer) == 2000
 
     def test_key_is_unique_across_the_whole_api_not_per_event(self):
-        """A mesma chave em dois eventos é a MESMA chave: quem gera garante que
+        """A mesma chave em dois eventos é a mesma chave: quem gera garante que
         ela é única (purchase:{id da compra})."""
         first_event = Event()
         second_event = Event()

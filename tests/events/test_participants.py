@@ -4,9 +4,6 @@ from tests.events.helpers import create_company, create_event, create_stand, hea
 from tests.utils.services import events
 
 
-# precisa de Usuários (POST /companies, GET /internal/companies/{id})
-# e de Pagamentos (POST /internal/accounts) de pé
-
 class TestAddCompany:
     def test_organizer_adds_stand(self):
         organizer = uuid.uuid4()

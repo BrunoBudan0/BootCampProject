@@ -13,18 +13,11 @@ SERVICE_NAME = os.environ.get("SERVICE_NAME", "events-api")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-# O token DESTA API: quem chama precisa mandar este valor no header
-# INTERNAL-TOKEN. Quem o conhece: so o Gateway. Nenhuma outra API chama
-# Eventos — o grafo de dependencias nao tem seta voltando para ca.
+# Token desta API. Quem chama: so o Gateway.
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN", "")
 
-# As duas APIs que Eventos chama, cada uma com o token DELA. Eventos
-# pergunta a Usuarios se uma empresa existe, e pede a Pagamentos que
-# abra contas e mova dinheiro.
-#
-# O timeout aqui e menor que o do Gateway (que chama Eventos) e maior
-# que o de Pagamentos com os provedores: cada elo desiste antes de quem
-# esta esperando por ele.
+# APIs que Eventos chama, cada uma com o proprio token. O prazo e menor que
+# o do Gateway e maior que o de Pagamentos com os provedores.
 USERS_API_URL = os.environ.get("USERS_API_URL", "")
 USERS_API_TOKEN = os.environ.get("USERS_API_TOKEN", "")
 USERS_API_TIMEOUT = int(os.environ.get("USERS_API_TIMEOUT", "5"))

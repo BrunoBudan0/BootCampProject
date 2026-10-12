@@ -1,4 +1,4 @@
-"""GET /internal/events/{id}/reconciliation — o fechamento do evento.
+"""GET /internal/events/{id}/reconciliation: o fechamento do evento.
 
 Quem chama é a API de Eventos, quando o organizador pede o fechamento.
 Pagamentos confere duas coisas:

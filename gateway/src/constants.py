@@ -13,20 +13,11 @@ SERVICE_NAME = os.environ.get("SERVICE_NAME", "gateway")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-# No Gateway, o INTERNAL_TOKEN e o token do SISTEMA CLIENTE (o app do
-# publico e o painel): e o que eles mandam no header INTERNAL-TOKEN. Ele
-# para aqui e nunca entra na rede interna.
+# Token do sistema cliente (app do publico e painel). Nao entra na rede interna.
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN", "")
 
-# As tres APIs da rede interna. Cada uma tem o PROPRIO token, e o Gateway
-# e o unico servico que conhece os tres: e ele quem repassa as
-# requisicoes de fora. O endereco e o nome do servico no
-# docker-compose.yml (http://users-api:3000), nunca localhost.
-#
-# O timeout do Gateway e o MAIOR da cadeia: quem esta no meio (Eventos
-# chamando Pagamentos, Pagamentos chamando o provedor) precisa desistir
-# antes, para devolver um erro com nome em vez de deixar o Gateway
-# esperando sozinho.
+# APIs da rede interna, cada uma com o proprio token. O prazo e o maior da
+# cadeia: quem esta no meio desiste antes e devolve um erro com nome.
 USERS_API_URL = os.environ.get("USERS_API_URL", "")
 USERS_API_TOKEN = os.environ.get("USERS_API_TOKEN", "")
 USERS_API_TIMEOUT = int(os.environ.get("USERS_API_TIMEOUT", "10"))

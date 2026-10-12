@@ -1,4 +1,4 @@
-"""GET /transactions/{id} — uma transação: origem, destino, valor, método e status.
+"""GET /transactions/{id}: uma transação, com origem, destino, valor, método e status.
 
 Rota pública, pelo Gateway. Quem enxerga: o dono da conta de origem ou o
 da conta de destino. Os outros recebem 404 QIT002023, igual à transação
@@ -13,7 +13,7 @@ def a_payment():
     payer = event.user_account(balance_cents=5000)
     receiver = event.user_account()
     response = move([(payer, receiver, 1500)])
-    assert response.status_code == 201, f"A PREPARAÇÃO (o pagamento) falhou: {response.text}"
+    assert response.status_code == 201, f"A preparação (o pagamento) falhou: {response.text}"
 
     return payer, receiver, response.json()["transactions"][0]
 

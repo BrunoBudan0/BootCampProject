@@ -27,9 +27,6 @@ class AuthController(BaseController):
         token = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
 
-        # A API de Usuários devolve o UUID serializado como texto. Como a
-        # coluna SQLAlchemy usa UUID(as_uuid=True), convertemos para uuid.UUID
-        # antes de persistir; passar uma string causa erro interno no INSERT.
         user_id = uuid.UUID(str(identity["id"]))
 
         row = Session(

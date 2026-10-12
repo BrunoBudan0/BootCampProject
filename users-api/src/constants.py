@@ -13,12 +13,8 @@ SERVICE_NAME = os.environ.get("SERVICE_NAME", "users-api")
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# O token DESTA API: quem chama precisa mandar este valor no header
-# INTERNAL-TOKEN. Quem o conhece: o Gateway (login e cadastros) e a API
-# de Eventos (conferir se uma empresa existe). Mais ninguem.
-#
-# Repare que a API de Usuarios nao tem endereco nem token de nenhuma
-# outra: ela nao chama ninguem. E a ponta do grafo de dependencias.
+# Token desta API. Quem chama: o Gateway (login e cadastros) e a API de
+# Eventos (consulta de empresa). Usuarios nao chama nenhuma outra API.
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
 
 # Rotas públicas: não exigem o header INTERNAL-TOKEN. São as duas que

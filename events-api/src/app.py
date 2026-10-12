@@ -175,8 +175,6 @@ def create_app() -> FastAPI:
     application.add_api_route("/purchases/{purchase_id}", purchase_resource.on_get, methods=["GET"])
     application.add_api_route("/purchases/{purchase_id}/refund", purchase_resource.on_post_refund, methods=["POST"])
 
-    # As rotas deste serviço entram aqui, uma linha por endereço e verbo,
-    # seguindo a tabela de rotas da RFC.
 
     register_error_handlers(application)
 

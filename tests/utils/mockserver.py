@@ -1,16 +1,13 @@
-"""Conversa com o Mockserver, o ator no lugar dos provedores de cartão e Pix.
+"""Conversa com o Mockserver, que faz o papel dos provedores de cartão e Pix.
 
-Três verbos, e só:
   expect    combina o roteiro: "quando chegar tal pedido, responda isto"
   received  pergunta se o pedido chegou, e quantas vezes
-  reset     apaga os roteiros e tudo o que o ator recebeu
+  reset     apaga os roteiros e tudo o que o Mockserver recebeu
 
 O Mockserver é um só para a suíte inteira. Todo teste que o programa
 começa com reset(), para não herdar o roteiro de outro teste.
 
-─────────────────────────────────────────────────────────────────────
-O CONTRATO COM OS PROVEDORES (inventado por nós: está na RFC)
-─────────────────────────────────────────────────────────────────────
+Contrato com os provedores (definido na RFC):
 Cartão   POST {CARD_PROVIDER_URL}/authorizations
          pedido:   {card_token, amount_cents, reference}
          resposta: 200 {status: "approved", authorization_id}
@@ -71,9 +68,9 @@ def expect(method: str, path: str, status_code: int, body: dict = None, delay_se
 
 
 def expect_dropped_connection(method: str, path: str) -> None:
-    """O ator recebe o pedido inteiro e fecha a conexão sem responder.
+    """O Mockserver recebe o pedido inteiro e fecha a conexão sem responder.
 
-    É o caso mais traiçoeiro para quem chama: o pedido chegou ao provedor,
+    O pedido chegou ao provedor,
     então a cobrança pode ter acontecido, mas a resposta nunca vem.
     """
     expectation = {
@@ -88,9 +85,9 @@ def expect_dropped_connection(method: str, path: str) -> None:
 
 
 def received(method: str, path: str, times: int, json_fields: dict = None) -> bool:
-    """O ator recebeu exatamente `times` pedidos assim?
+    """O Mockserver recebeu exatamente `times` pedidos assim?
 
-    `json_fields` restringe aos pedidos cujo corpo tem AO MENOS esses
+    `json_fields` restringe aos pedidos cujo corpo tem ao menos esses
     campos com esses valores (os outros campos do corpo não importam).
     """
     http_request = {"method": method, "path": path}
@@ -111,14 +108,14 @@ def received(method: str, path: str, times: int, json_fields: dict = None) -> bo
 
 
 def wait_until_received(method: str, path: str, times: int, deadline_seconds: float = 10) -> None:
-    """Espera o ator receber o pedido, em vez de dormir um tempo fixo.
+    """Espera o Mockserver receber o pedido, em vez de dormir um tempo fixo.
 
     Um `sleep` adivinha quanto a API demora; numa máquina lenta ele erra.
     Aqui o teste só segue quando o pedido de fato chegou ao provedor.
     """
     give_up_at = time.monotonic() + deadline_seconds
     while not received(method, path, times):
-        assert time.monotonic() < give_up_at, f"o ator não recebeu {times} pedido(s) {method} {path} a tempo"
+        assert time.monotonic() < give_up_at, f"o Mockserver não recebeu {times} pedido(s) {method} {path} a tempo"
         time.sleep(0.05)
 
 

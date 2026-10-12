@@ -1,6 +1,6 @@
-"""POST /internal/reversals — o estorno de uma compra.
+"""POST /internal/reversals: o estorno de uma compra.
 
-Desfazer é um fato NOVO (R4): cada transação original ganha uma
+Desfazer é um fato novo (R4): cada transação original ganha uma
 transação no sentido contrário, que aponta para ela em
 reverses_transaction_id, e a original passa a `reversed`. Nada é
 apagado. A ordem é fixa: primeiro as que saem de contas do sistema; por
@@ -39,7 +39,7 @@ def bought(event, balance_cents=5000):
     buyer = event.user_account(balance_cents=balance_cents)
     stand = event.stand_account()
     key, response = event.purchase(buyer, stand, total=4000, fee=200, cashback=80)
-    assert response.status_code == 201, f"A PREPARAÇÃO (a compra) falhou: {response.text}"
+    assert response.status_code == 201, f"A preparação (a compra) falhou: {response.text}"
 
     return buyer, stand, key, response.json()["transactions"]
 
@@ -96,8 +96,8 @@ class TestReversal:
     def test_spent_cashback_comes_out_of_the_refund(self):
         """O caso da RFC: o público gastou os R$ 0,80 de cashback antes de devolver.
 
-        Ele recebe R$ 40,00 de volta, devolve os R$ 0,80, e fica com R$ 39,20
-        — ninguém fica negativo e a soma do evento continua zero.
+        Ele recebe R$ 40,00 de volta, devolve os R$ 0,80, e fica com R$ 39,20:
+        ninguém fica negativo, e a soma do evento continua zero.
         """
         event = Event()
         buyer, stand, key, _ = bought(event, balance_cents=4000)

@@ -63,9 +63,6 @@ coverage.xml
 *.swp
 .DS_Store
 
-# --- Ferramentas de IA -------------------------------------
-.claude/
-
 # --- Empacotamento / binários ------------------------------
 *.zip
 *.tar

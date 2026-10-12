@@ -1,4 +1,4 @@
-"""POST /recharges com cartão — o dinheiro entra de fora, na hora.
+"""POST /recharges com cartão: o dinheiro entra de fora, na hora.
 
 Rota pública, pelo Gateway. O número do cartão nunca entra no sistema: o
 app manda só o card_token gerado pelo provedor.
@@ -16,7 +16,7 @@ O reenvio com a mesma chave devolve a transação como ela está (200), e o
 app lê o status. Recarga recusada não se repete com a mesma chave.
 
 Aqui o provedor é o Mockserver: cada teste combina o que ele responde e,
-no fim, pergunta o que ele recebeu. O Mockserver responde com o PRIMEIRO
+no fim, pergunta o que ele recebeu. O Mockserver responde com o primeiro
 roteiro que casa com o pedido; para trocar a resposta no meio de um
 teste, é preciso limpar o roteiro antes (reset).
 
@@ -64,7 +64,7 @@ PARALLEL_REQUESTS = 5
 
 @pytest.fixture(autouse=True)
 def clean_provider():
-    """O ator é um só para a suíte: cada teste começa sem roteiro herdado."""
+    """O Mockserver é um só para a suíte: cada teste começa sem roteiro herdado."""
     mockserver.reset()
     yield
     mockserver.reset()
@@ -141,7 +141,7 @@ class TestCardRecharge:
         O bloqueio só é mandado depois que o pedido chegou ao provedor, ou
         seja, depois que a API já conferiu que a conta estava livre.
         """
-        mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED, delay_seconds=2)
+        mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED, delay_seconds=1)
         account = Event().user_account()
         responses = []
         recharging = threading.Thread(target=lambda: responses.append(recharge_by_card(account, 5000)))
@@ -149,6 +149,7 @@ class TestCardRecharge:
         recharging.start()
         mockserver.wait_until_received("POST", CARD_AUTHORIZATIONS, 1)
         setup_ok(block(account))
+        assert recharging.is_alive(), "o bloqueio chegou depois de a recarga terminar: o cenário não foi exercitado"
         recharging.join()
 
         assert responses[0].status_code == 201, responses[0].text
@@ -202,8 +203,8 @@ class TestCardRechargeFailures:
         assert balance(account) == 0
 
     def test_provider_timeout_leaves_the_recharge_pending_and_never_charges_again(self):
-        """O provedor demora mais que o prazo (3 s). A pessoa PODE ter sido
-        cobrada — é o log crítico CARD_OUTCOME_UNKNOWN —, então nenhum saldo
+        """O provedor demora mais que o prazo (3 s). A pessoa pode ter sido
+        cobrada (é o log crítico CARD_OUTCOME_UNKNOWN), então nenhum saldo
         entra sem a aprovação, e o reenvio com a mesma chave não cobra de novo."""
         mockserver.expect("POST", CARD_AUTHORIZATIONS, 200, APPROVED, delay_seconds=6)
         account = Event().user_account()

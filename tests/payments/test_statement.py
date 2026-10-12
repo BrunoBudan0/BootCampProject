@@ -1,4 +1,4 @@
-"""GET /accounts/{id}/transactions — o extrato paginado.
+"""GET /accounts/{id}/transactions: o extrato paginado.
 
 Não existe tabela de lançamentos: o extrato são as transações em que a
 conta aparece como origem ou destino, já settled ou reversed, da mais
@@ -53,7 +53,7 @@ from tests.utils.payments import (
 
 def settled_at_of_the_only_line(account) -> datetime:
     lines = setup_ok(statement(account))["data"]
-    assert len(lines) == 1, f"A PREPARAÇÃO esperava uma linha no extrato, veio {lines}"
+    assert len(lines) == 1, f"A preparação esperava uma linha no extrato, veio {lines}"
 
     return datetime.fromisoformat(lines[0]["settled_at"])
 

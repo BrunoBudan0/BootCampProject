@@ -1,22 +1,17 @@
 """Ajudantes dos testes da API de Pagamentos.
 
-Cada teste monta o próprio mundo PELA PORTA DA FRENTE (R1): conta nasce
-por POST /internal/accounts e dinheiro entra por POST /internal/transactions
-(da conta external do evento para a conta, método cash — exatamente o que
-a recarga em dinheiro faz). Nenhum INSERT, nenhuma leitura de banco.
+Cada teste monta o próprio cenário pelas rotas da API (R1): a conta nasce
+por POST /internal/accounts, e o dinheiro entra por POST /internal/transactions
+(da conta external do evento para a conta, método cash, como a recarga em
+dinheiro). Nenhum INSERT e nenhuma leitura de banco.
 
-Cada teste também nasce num evento NOVO (um UUID novo): o banco não é
-limpo entre testes, mas nenhum teste enxerga as contas do outro.
+Cada teste usa um evento novo (um UUID novo): o banco não é limpo entre
+testes, e nenhum teste enxerga as contas do outro.
 
-Quando um passo de PREPARAÇÃO falha, o ajudante para o teste dizendo que
-foi a preparação — e não a regra testada — que quebrou. Enquanto a rota
-usada na preparação não existir, todo teste que depende dela fica
-vermelho por esse motivo: é o TDD mostrando a ordem de implementar.
+Quando um passo de preparação falha, o ajudante para o teste dizendo que
+foi a preparação, e não a regra testada, que quebrou.
 
-─────────────────────────────────────────────────────────────────────
-O CONTRATO QUE ESTES TESTES ESPERAM (é a RFC, com os detalhes que ela
-deixava em aberto já decididos)
-─────────────────────────────────────────────────────────────────────
+Contrato esperado (o da RFC):
 Conta:      {id, event_id, holder_id, holder_type, kind, balance_cents,
              blocked, created_at}
             holder_type é attendee (credencial) ou company (stand) nas
@@ -53,9 +48,6 @@ ERROR_FIELDS = {"title", "description", "translation", "code"}
 PIX_WEBHOOK_SECRET = os.environ.get("PIX_WEBHOOK_SECRET", "pix_default_secret")
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Valores novos
-# ─────────────────────────────────────────────────────────────────────
 
 def new_uuid() -> str:
     return str(uuid.uuid4())
@@ -75,9 +67,6 @@ def is_uuid(value) -> bool:
     return True
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Quem chama
-# ─────────────────────────────────────────────────────────────────────
 
 def as_caller(user_id: str, user_type: str = "attendee") -> dict:
     """Os cabeçalhos que o Gateway põe depois de conferir a sessão.
@@ -92,9 +81,6 @@ def as_caller(user_id: str, user_type: str = "attendee") -> dict:
     }
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Conferências
-# ─────────────────────────────────────────────────────────────────────
 
 def assert_error(response, status: int, code: str) -> None:
     """Confere uma recusa: o status, o código e o formato do corpo (R3)."""
@@ -126,7 +112,7 @@ NO_CONTENT = 204
 
 
 def setup_ok(response, what: str = None):
-    """Confere um passo de PREPARAÇÃO e devolve o corpo da resposta.
+    """Confere um passo de preparação e devolve o corpo da resposta.
 
     Toda chamada que só monta o cenário passa por aqui. Sem isto, uma
     preparação que falhou deixaria o teste quebrar mais adiante, numa
@@ -134,7 +120,7 @@ def setup_ok(response, what: str = None):
     """
     what = what or f"{response.request.method} {response.request.path_url}"
     assert response.status_code in SETUP_SUCCESS_STATUSES, (
-        f"A PREPARAÇÃO do teste falhou em {what}: {response.status_code} {response.text}\n"
+        f"A preparação do teste falhou em {what}: {response.status_code} {response.text}\n"
         "O que está quebrado é a rota usada para montar o cenário, não a regra deste teste."
     )
 
@@ -143,10 +129,6 @@ def setup_ok(response, what: str = None):
 
     return response.json()
 
-
-# ─────────────────────────────────────────────────────────────────────
-# Rotas, chamadas do jeito que a API de Eventos e o Gateway chamariam
-# ─────────────────────────────────────────────────────────────────────
 
 ATTENDEE_HOLDER = "attendee"
 COMPANY_HOLDER = "company"
@@ -265,13 +247,13 @@ def pix_webhook(
 ):
     """PUT /webhooks/pix/{id}, como o provedor de Pix chamaria (pelo Gateway).
 
-    A assinatura é um HMAC-SHA256, em hexadecimal, dos bytes EXATOS do
+    A assinatura é um HMAC-SHA256, em hexadecimal, dos bytes exatos do
     corpo, com o segredo combinado com o provedor. Vai no cabeçalho
     X-Pix-Signature. Por isso o corpo vai cru (`data`), e não como `json`:
     assinar um texto e mandar outro quebraria a conta.
 
     O corpo carrega a `reference` que Pagamentos mandou ao criar a cobrança
-    (o id da transação): é ela que amarra o aviso assinado a UMA cobrança.
+    (o id da transação): é ela que amarra o aviso assinado a uma única cobrança.
     """
     notice = {"status": status, "amount_cents": amount_cents, "reference": reference or transaction_id}
 
@@ -295,10 +277,6 @@ def fire_together(request_function, times: int) -> list:
         futures = [pool.submit(request_function) for _ in range(times)]
         return [future.result() for future in futures]
 
-
-# ─────────────────────────────────────────────────────────────────────
-# O cenário mais comum: um evento com as contas do sistema
-# ─────────────────────────────────────────────────────────────────────
 
 class Event:
     """Um evento novo, com as duas contas que a API de Eventos abre ao criá-lo."""

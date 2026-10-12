@@ -1,9 +1,9 @@
-"""GET /accounts e GET /accounts/{id} — o dono consulta as contas e o saldo.
+"""GET /accounts e GET /accounts/{id}: o dono consulta as contas e o saldo.
 
 Rotas públicas: chegam pelo Gateway, que diz quem chama em X-User-Id.
 Pagamentos confere sozinha que a conta é de quem chama (holder_id).
 
-Conta que não é sua responde 404 QIT002020, IGUAL à conta que não existe
+Conta que não é sua responde 404 QIT002020, igual à conta que não existe
 (R8): quem varre ids não aprende quais existem.
 """
 

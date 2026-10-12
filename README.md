@@ -2,7 +2,7 @@
 
 Banco de circuito fechado para feiras e eventos. O público carrega saldo numa credencial e compra nos stands pelo app; cada stand tem a própria conta. Toda movimentação passa por contas deste banco, e a soma dos saldos de um evento é sempre zero.
 
-Projeto do Bootcamp QI Tech 2026 — Bruno Budano Mello e Pedro Henrique Mathias Santiago.
+Projeto do Bootcamp QI Tech 2026, de Bruno Budano Mello e Pedro Henrique Mathias Santiago.
 
 ## Arquitetura
 
@@ -14,9 +14,9 @@ Quatro serviços, cada um com o próprio banco Postgres. Nenhum lê o banco do o
 | `users-api` | Público, organizadores e empresas: cadastro e conferência de senha | `users-db` | `127.0.0.1:3001` |
 | `events-api` | Regras do evento: stands, credenciais, produtos, compras, tarifa e cashback | `events-db` | `127.0.0.1:3002` |
 | `payments-api` | Contas e transações: move dinheiro e não sabe o que foi comprado | `payments-db` | `127.0.0.1:3003` |
-| `mockserver` | Faz o papel dos provedores de cartão e Pix | — | `127.0.0.1:1080` |
+| `mockserver` | Faz o papel dos provedores de cartão e Pix | não tem | `127.0.0.1:1080` |
 
-As APIs internas ficam presas a `127.0.0.1` para que os testes de cada uma cheguem direto nela; em produção, só o Gateway publicaria porta. Os detalhes — redes, tokens e timeouts — estão comentados no [`docker-compose.yml`](docker-compose.yml).
+As APIs internas ficam presas a `127.0.0.1` para que os testes de cada uma cheguem direto nela; em produção, só o Gateway publicaria porta. Os detalhes de redes, tokens e timeouts estão comentados no [`docker-compose.yml`](docker-compose.yml).
 
 ## Subindo
 
@@ -77,4 +77,4 @@ tests/                 a suíte, uma pasta por API e uma para o sistema inteiro
 
 ## Configuração
 
-Nada precisa ser configurado para subir: cada valor tem um padrão no `docker-compose.yml`. Para trocar uma porta ocupada ou um token, copie `.env.example` para `.env` e edite — o compose e os testes leem o mesmo arquivo.
+Nada precisa ser configurado para subir: cada valor tem um padrão no `docker-compose.yml`. Para trocar uma porta ocupada ou um token, copie `.env.example` para `.env` e edite: o compose e os testes leem o mesmo arquivo.

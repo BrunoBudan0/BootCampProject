@@ -13,25 +13,17 @@ SERVICE_NAME = os.environ.get("SERVICE_NAME", "payments-api")
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# O token DESTA API: quem chama precisa mandar este valor no header
-# INTERNAL-TOKEN. Quem o conhece: o Gateway (recargas, transferencias,
-# extrato) e a API de Eventos (rotas /internal/*). Mais ninguem.
+# Token desta API. Quem chama: o Gateway (recargas, transferencias e
+# extrato) e a API de Eventos (rotas /internal/*).
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
 
-# Os provedores de FORA: autorizacao de cartao e cobranca Pix. Pagamentos
-# e a unica API que fala com eles, e nao chama nenhuma outra API da casa.
-# Na avaliacao quem atende e o Mockserver; o codigo nao sabe a diferenca,
-# so muda o endereco.
-#
-# O timeout aqui e o MENOR da cadeia (Gateway > Eventos > Pagamentos >
-# provedor): Pagamentos precisa desistir do provedor antes que quem
-# esta esperando por ela desista dela.
+# Provedores de cartao e Pix (o Mockserver, no ambiente local). O prazo e o
+# menor da cadeia: Pagamentos desiste do provedor antes de quem espera por ela.
 CARD_PROVIDER_URL = os.environ.get("CARD_PROVIDER_URL")
 PIX_PROVIDER_URL = os.environ.get("PIX_PROVIDER_URL")
 PROVIDERS_TIMEOUT = int(os.environ.get("PROVIDERS_TIMEOUT", "3"))
 
-# O segredo com que o provedor de Pix assina o webhook. E ele, e nao o
-# INTERNAL-TOKEN, que autentica quem avisa que um Pix foi pago.
+# Segredo do HMAC que autentica o webhook do Pix.
 PIX_WEBHOOK_SECRET = os.environ.get("PIX_WEBHOOK_SECRET")
 
 # Rotas públicas: não exigem o header INTERNAL-TOKEN. São as duas que

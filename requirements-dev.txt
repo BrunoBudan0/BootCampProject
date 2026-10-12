@@ -1,13 +1,8 @@
-# O que a SUA máquina precisa para rodar os testes. Nada daqui vai para
-# dentro das imagens: as APIs têm cada uma o próprio requirements.txt.
-#
-# Os testes são black-box (R1): falam com as APIs só por HTTP. Por isso
-# esta lista não tem FastAPI nem SQLAlchemy — o teste não sabe com que
-# as APIs foram escritas.
+# Dependências para rodar os testes na máquina. Não entram nas imagens.
+# Os testes são black-box: falam com as APIs só por HTTP.
 
 pytest==7.4.4
 pytest-xdist==3.6.1
 requests==2.32.3
-# Lê o .env da raiz (se existir), para os testes usarem as mesmas
-# portas e tokens que o docker compose.
+# Lê o .env da raiz, se existir, com as mesmas portas e tokens do compose.
 python-dotenv==1.0.1

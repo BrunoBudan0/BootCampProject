@@ -1,4 +1,4 @@
-"""POST /transfers — saldo de uma credencial para outra, no mesmo evento.
+"""POST /transfers: saldo de uma credencial para outra, no mesmo evento.
 
 Rota pública, pelo Gateway. Pagamentos resolve sozinha, sem chamar
 nenhuma outra API. Sem tarifa e sem cashback, porque não houve compra.

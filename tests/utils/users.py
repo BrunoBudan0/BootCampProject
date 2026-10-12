@@ -116,7 +116,7 @@ def registered(user_type: str, **changes) -> dict:
     payload = PAYLOAD_BUILDER_BY_USER_TYPE[user_type](**changes)
     response = register(user_type, payload)
     assert response.status_code == 201, (
-        f"A PREPARAÇÃO do teste falhou ao cadastrar {user_type}: {response.status_code} {response.text}\n"
+        f"A preparação do teste falhou ao cadastrar {user_type}: {response.status_code} {response.text}\n"
         "O que está quebrado é o cadastro usado para montar o cenário, não a regra deste teste."
     )
 

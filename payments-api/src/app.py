@@ -159,8 +159,6 @@ def create_app() -> FastAPI:
     application.add_api_route("/recharges", recharge_resource.on_post, methods=["POST"])
     application.add_api_route("/webhooks/pix/{transaction_id}", recharge_resource.on_put_pix_webhook, methods=["PUT"])
 
-    # As rotas deste serviço entram aqui, uma linha por endereço e verbo,
-    # seguindo a tabela de rotas da RFC.
 
     register_error_handlers(application)
 

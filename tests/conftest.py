@@ -3,7 +3,7 @@
 O pytest lê este arquivo sozinho, antes de importar qualquer teste. Aqui
 ele só carrega o .env da raiz, se existir: assim, quem trocou uma porta
 ou um token no .env roda os testes contra os mesmos valores que o
-docker compose usou. Sem .env, valem os padrões — os mesmos do compose.
+docker compose usou. Sem .env, valem os padrões, que são os mesmos do compose.
 """
 
 from pathlib import Path

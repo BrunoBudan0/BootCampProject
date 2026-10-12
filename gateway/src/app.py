@@ -131,8 +131,6 @@ def create_app() -> FastAPI:
         methods=["GET"]
     )
 
-    # As rotas deste serviço entram aqui, uma linha por endereço e verbo,
-    # seguindo a tabela de rotas da RFC.
 
     auth_resource = AuthResource()
     application.add_api_route("/auth/login", auth_resource.on_post_login, methods=["POST"])
